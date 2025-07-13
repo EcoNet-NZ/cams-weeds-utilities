@@ -40,13 +40,5 @@
         "retry_attempts": 5
       }
     }
-  },
-  "validation": {
-    "required_environment_variables": [
-      "ARCGIS_USERNAME",
-      "ARCGIS_PASSWORD",
-      "CAMS_ENVIRONMENT"
-    ],
-    "supported_environments": ["development", "production"]
   }
 } 
