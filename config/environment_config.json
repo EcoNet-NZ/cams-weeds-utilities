@@ -1,0 +1,50 @@
+{
+  "environments": {
+    "development": {
+      "arcgis_url": "https://your-dev-org.maps.arcgis.com",
+      "layers": {
+        "weed_locations": "dev_weed_locations_layer_id",
+        "regions": "dev_regions_layer_id",
+        "districts": "dev_districts_layer_id",
+        "metadata": "dev_metadata_layer_id"
+      },
+      "logging": {
+        "level": "DEBUG",
+        "format": "standard",
+        "log_dir": "logs"
+      },
+      "processing": {
+        "batch_size": 100,
+        "timeout_seconds": 300,
+        "retry_attempts": 3
+      }
+    },
+    "production": {
+      "arcgis_url": "https://your-prod-org.maps.arcgis.com",
+      "layers": {
+        "weed_locations": "prod_weed_locations_layer_id",
+        "regions": "prod_regions_layer_id",
+        "districts": "prod_districts_layer_id",
+        "metadata": "prod_metadata_layer_id"
+      },
+      "logging": {
+        "level": "INFO",
+        "format": "json",
+        "log_dir": "/var/log/cams"
+      },
+      "processing": {
+        "batch_size": 500,
+        "timeout_seconds": 600,
+        "retry_attempts": 5
+      }
+    }
+  },
+  "validation": {
+    "required_environment_variables": [
+      "ARCGIS_USERNAME",
+      "ARCGIS_PASSWORD",
+      "CAMS_ENVIRONMENT"
+    ],
+    "supported_environments": ["development", "production"]
+  }
+} 
