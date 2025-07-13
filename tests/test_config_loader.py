@@ -27,15 +27,19 @@ class TestConfigLoader:
     
     @pytest.fixture
     def valid_environment_config(self):
-        """Valid environment configuration for testing."""
+        """Valid environment configuration for testing with DRY structure."""
         return {
+            "shared": {
+                "layers": {
+                    "regions": "shared_region_layer_id",
+                    "districts": "shared_district_layer_id"
+                }
+            },
             "environments": {
                 "development": {
                     "arcgis_url": "https://dev.arcgis.com",
                     "layers": {
                         "weed_locations": "dev_weed_id",
-                        "regions": "dev_region_id",
-                        "districts": "dev_district_id",
                         "metadata": "dev_metadata_id"
                     },
                     "logging": {
@@ -51,8 +55,6 @@ class TestConfigLoader:
                     "arcgis_url": "https://prod.arcgis.com",
                     "layers": {
                         "weed_locations": "prod_weed_id",
-                        "regions": "prod_region_id",
-                        "districts": "prod_district_id",
                         "metadata": "prod_metadata_id"
                     },
                     "logging": {
@@ -134,7 +136,7 @@ class TestConfigLoader:
         assert loader.config_dir == temp_config_dir
     
     def test_load_environment_config_success(self, config_loader, temp_config_dir, valid_environment_config):
-        """Test successful loading of environment configuration."""
+        """Test successful loading of environment configuration with shared layers."""
         # Write valid configuration file
         env_config_path = temp_config_dir / "environment_config.json"
         with open(env_config_path, 'w') as f:
@@ -145,8 +147,53 @@ class TestConfigLoader:
         
         assert config["arcgis_url"] == "https://dev.arcgis.com"
         assert config["layers"]["weed_locations"] == "dev_weed_id"
+        assert config["layers"]["regions"] == "shared_region_layer_id"  # From shared
+        assert config["layers"]["districts"] == "shared_district_layer_id"  # From shared
+        assert config["layers"]["metadata"] == "dev_metadata_id"
         assert config["logging"]["level"] == "DEBUG"
         assert "_validation" in config
+    
+    def test_load_environment_config_shared_override(self, config_loader, temp_config_dir):
+        """Test that environment-specific layers override shared layers."""
+        config_with_override = {
+            "shared": {
+                "layers": {
+                    "regions": "shared_region_layer_id",
+                    "weed_locations": "shared_weed_id"  # This should be overridden
+                }
+            },
+            "environments": {
+                "development": {
+                    "arcgis_url": "https://dev.arcgis.com",
+                    "layers": {
+                        "weed_locations": "dev_weed_id",  # This overrides shared
+                        "metadata": "dev_metadata_id",
+                        "districts": "dev_district_id"
+                    },
+                    "logging": {"level": "DEBUG", "format": "standard"},
+                    "processing": {"batch_size": 100, "timeout_seconds": 300}
+                }
+            },
+            "validation": {
+                "required_environment_variables": ["ARCGIS_USERNAME"],
+                "supported_environments": ["development"]
+            }
+        }
+        
+        # Write configuration file
+        env_config_path = temp_config_dir / "environment_config.json"
+        with open(env_config_path, 'w') as f:
+            json.dump(config_with_override, f)
+        
+        # Load configuration
+        config = config_loader.load_environment_config("development")
+        
+        # Environment-specific should override shared
+        assert config["layers"]["weed_locations"] == "dev_weed_id"
+        # Shared should still be present
+        assert config["layers"]["regions"] == "shared_region_layer_id"
+        # Environment-specific should be present
+        assert config["layers"]["districts"] == "dev_district_id"
     
     def test_load_environment_config_file_not_found(self, config_loader):
         """Test loading environment configuration when file doesn't exist."""
@@ -296,6 +343,35 @@ class TestConfigLoader:
             config_loader._validate_environment_config(invalid_config, "development")
         
         assert "Missing required key" in str(exc_info.value)
+    
+    def test_validate_environment_config_missing_layers_with_shared(self, config_loader):
+        """Test validation correctly handles missing layers when using shared configuration."""
+        config_missing_layers = {
+            "shared": {
+                "layers": {
+                    "regions": "shared_region_id"
+                    # Missing districts
+                }
+            },
+            "environments": {
+                "development": {
+                    "arcgis_url": "https://test.com",
+                    "layers": {
+                        "weed_locations": "dev_weed_id"
+                        # Missing metadata
+                    },
+                    "logging": {"level": "DEBUG", "format": "standard"},
+                    "processing": {"batch_size": 100, "timeout_seconds": 300}
+                }
+            }
+        }
+        
+        with pytest.raises(CAMSValidationError) as exc_info:
+            config_loader._validate_environment_config(config_missing_layers, "development")
+        
+        assert "Missing required layers" in str(exc_info.value)
+        assert "districts" in str(exc_info.value)
+        assert "metadata" in str(exc_info.value)
     
     def test_validate_field_mapping_missing_layers(self, config_loader):
         """Test validation with missing layers key."""

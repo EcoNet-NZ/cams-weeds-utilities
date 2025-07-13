@@ -101,7 +101,9 @@ dev_config = config_loader.load_environment_config("development")
 
 # Access configuration values
 arcgis_url = dev_config["arcgis_url"]
-weed_layer_id = dev_config["layers"]["weed_locations"]
+weed_layer_id = dev_config["layers"]["weed_locations"]  # Environment-specific
+regions_layer_id = dev_config["layers"]["regions"]      # From shared config
+districts_layer_id = dev_config["layers"]["districts"]  # From shared config
 ```
 
 ### Field Mapping Usage
@@ -147,15 +149,22 @@ except CAMSValidationError as e:
 
 ### Environment Configuration (`config/environment_config.json`)
 
+The configuration follows DRY principles by using shared configuration for layers that are the same across environments:
+
 ```json
 {
+  "shared": {
+    "layers": {
+      "regions": "region_boundaries_layer_id",
+      "districts": "district_boundaries_layer_id"
+    }
+  },
   "environments": {
     "development": {
-      "arcgis_url": "https://your-dev-org.maps.arcgis.com",
+      "arcgis_url": "https://econethub.maps.arcgis.com",
       "layers": {
         "weed_locations": "dev_weed_locations_layer_id",
-        "regions": "dev_regions_layer_id",
-        "districts": "dev_districts_layer_id"
+        "metadata": "dev_metadata_layer_id"
       },
       "logging": {
         "level": "DEBUG",
@@ -163,11 +172,10 @@ except CAMSValidationError as e:
       }
     },
     "production": {
-      "arcgis_url": "https://your-prod-org.maps.arcgis.com",
+      "arcgis_url": "https://econethub.maps.arcgis.com",
       "layers": {
         "weed_locations": "prod_weed_locations_layer_id",
-        "regions": "prod_regions_layer_id",
-        "districts": "prod_districts_layer_id"
+        "metadata": "prod_metadata_layer_id"
       },
       "logging": {
         "level": "INFO",
@@ -177,6 +185,8 @@ except CAMSValidationError as e:
   }
 }
 ```
+
+**Note:** The `ConfigLoader` automatically merges shared layers with environment-specific layers. Environment-specific layers will override shared layers if there are naming conflicts.
 
 ### Field Mapping Configuration (`config/field_mapping.json`)
 

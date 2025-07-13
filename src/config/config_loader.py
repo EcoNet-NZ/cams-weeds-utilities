@@ -43,7 +43,7 @@ class ConfigLoader:
             environment: Environment name (development/production)
             
         Returns:
-            Dictionary containing environment-specific configuration
+            Dictionary containing environment-specific configuration merged with shared config
             
         Raises:
             CAMSConfigurationError: If configuration cannot be loaded or validated
@@ -63,7 +63,26 @@ class ConfigLoader:
             self._validate_environment_config(config_data, environment)
             
             # Extract environment-specific configuration
-            env_config = config_data["environments"][environment]
+            env_config = config_data["environments"][environment].copy()
+            
+            # Merge shared configuration with environment-specific configuration
+            if "shared" in config_data:
+                shared_config = config_data["shared"]
+                
+                # Merge shared layers with environment-specific layers
+                if "layers" in shared_config and "layers" in env_config:
+                    # Start with shared layers and update with environment-specific ones
+                    merged_layers = shared_config["layers"].copy()
+                    merged_layers.update(env_config["layers"])
+                    env_config["layers"] = merged_layers
+                elif "layers" in shared_config:
+                    # Only shared layers exist
+                    env_config["layers"] = shared_config["layers"].copy()
+                
+                # Add other shared configuration items if needed
+                for key, value in shared_config.items():
+                    if key != "layers" and key not in env_config:
+                        env_config[key] = value
             
             # Add validation metadata
             env_config["_validation"] = config_data.get("validation", {})
@@ -219,15 +238,26 @@ class ConfigLoader:
                     f"Missing required key '{key}' in {environment} configuration"
                 )
         
-        # Validate layer configuration
-        layer_config = env_config["layers"]
+        # Validate that we have all required layers after merging
         required_layers = ["weed_locations", "regions", "districts", "metadata"]
         
-        for layer in required_layers:
-            if layer not in layer_config:
-                raise CAMSValidationError(
-                    f"Missing required layer '{layer}' in {environment} configuration"
-                )
+        # Get layers from environment config
+        env_layers = set(env_config.get("layers", {}).keys())
+        
+        # Get layers from shared config if it exists
+        shared_layers = set()
+        if "shared" in config_data and "layers" in config_data["shared"]:
+            shared_layers = set(config_data["shared"]["layers"].keys())
+        
+        # Combine all available layers
+        all_layers = env_layers | shared_layers
+        
+        # Check if all required layers are present
+        missing_layers = [layer for layer in required_layers if layer not in all_layers]
+        if missing_layers:
+            raise CAMSValidationError(
+                f"Missing required layers in {environment} configuration (including shared): {missing_layers}"
+            )
     
     def _validate_field_mapping(self, mapping_data: Dict[str, Any]) -> None:
         """
