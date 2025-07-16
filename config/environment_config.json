@@ -1,16 +1,16 @@
 {
   "shared": {
     "layers": {
-      "regions": "region_boundaries_layer_id",
-      "districts": "district_boundaries_layer_id"
+      "regions": "7759fbaecd4649dea39c4ac2b07fc4ab",
+      "districts": "c8f6ba6b968c4d31beddfb69abfe3df0"
     }
   },
   "environments": {
     "development": {
       "arcgis_url": "https://econethub.maps.arcgis.com",
       "layers": {
-        "weed_locations": "dev_weed_locations_layer_id",
-        "metadata": "dev_metadata_layer_id"
+        "weed_locations": "f1d9e7c7a95a4583bb3aa9918822db26",
+        "metadata": "ed3c4c84b6d44449b46fea65a97d06d1"
       },
       "logging": {
         "level": "DEBUG",
