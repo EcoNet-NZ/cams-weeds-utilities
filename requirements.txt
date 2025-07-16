@@ -1,0 +1,28 @@
+# CAMS Spatial Query Optimization System - Dependencies
+# Python 3.10+ required
+
+# Core ArcGIS API for Python - commented out for testing
+# arcgis>=2.0.0
+
+# Retry logic for robust operations
+tenacity>=8.0.0
+
+# Operation timeout handling
+func-timeout>=4.3.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Additional utility libraries
+requests>=2.28.0
+urllib3>=1.26.0
+
+# Configuration validation
+jsonschema>=4.17.0
+
+# Date/time handling
+python-dateutil>=2.8.0 
