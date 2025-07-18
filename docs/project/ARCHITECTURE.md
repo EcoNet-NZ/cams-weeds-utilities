@@ -2,13 +2,13 @@
 
 ## Overview
 
-This document defines the modular architecture for CAMS Utilities, a shared framework for building ArcGIS-based automation tools for the CAMS (Conservation Activity Management System) platform. The architecture supports multiple processing modules through a common core, with the Spatial Query Optimization system as the first implementation.
+This document defines the modular architecture for CAMS Utilities, a shared framework for building ArcGIS-based automation tools for the CAMS (Conservation Activity Management System) platform. The architecture supports multiple processing modules through a common core, with the Spatial Field Updater system as the first implementation.
 
 ## Business Context
 
 The CAMS platform requires various automated processing tasks that interact with ArcGIS Online data. Rather than building separate, standalone tools, this architecture provides a shared foundation for multiple processing modules.
 
-### Initial Use Case: Spatial Query Optimization
+### Initial Use Case: Spatial Field Updates
 - **Problem**: CAMS dashboard experiences slow response times due to real-time spatial queries when filtering 50,000+ weed records by region/district
 - **Solution**: Daily batch processing to pre-calculate spatial relationships
 - **Benefit**: Sub-second dashboard response times and improved user experience
@@ -160,11 +160,11 @@ cams-utilities/
 │   └── field_mapping.json          # ArcGIS field definitions
 │
 ├── modules/                         # Processing modules
-│   ├── spatial_query_processor/    # Spatial optimization module
+│   ├── spatial_field_updater/      # Spatial field update module
 │   │   ├── __init__.py
 │   │   ├── main.py                 # Module entry point
 │   │   ├── config/
-│   │   │   └── spatial_config.json # Module-specific configuration
+│   │   │   └── field_updater_config.json # Module-specific configuration
 │   │   ├── processor/              # Spatial processing logic
 │   │   │   ├── __init__.py
 │   │   │   ├── spatial_processor.py
@@ -207,7 +207,7 @@ cams-utilities/
 │
 ├── .github/                        # CI/CD workflows
 │   └── workflows/
-│       ├── spatial-processor.yml   # Spatial query processor
+│       ├── spatial-field-updater.yml # Spatial field updater
 │       ├── data-sync.yml          # Data sync module
 │       └── core-tests.yml         # Core framework tests
 │
@@ -216,7 +216,7 @@ cams-utilities/
 │   │   ├── ARCHITECTURE.md         # This document
 │   │   └── ROADMAP.md             # Development roadmap
 │   └── modules/                    # Module-specific documentation
-│       ├── spatial_query_processor/
+│       ├── spatial_field_updater/
 │       ├── data_sync_module/
 │       └── report_generator/
 │
@@ -351,9 +351,9 @@ The framework provides standardized patterns for data access and management that
 - **Version Control**: Layer version tracking for change detection
 - **Environment Naming**: Consistent DEV suffixes for development metadata
 
-### Example: Spatial Query Processor Data Model
+### Example: Spatial Field Updater Data Model
 
-As the first implemented module, the Spatial Query Processor demonstrates the data architecture patterns:
+As the first implemented module, the Spatial Field Updater demonstrates the data architecture patterns:
 
 #### Primary Data Layers
 
@@ -443,9 +443,9 @@ All modules leverage these shared processing components:
 - **Pattern**: Fail-safe updates (only write on success)
 - **Monitoring**: Standardized status reporting for all modules
 
-### Example: Spatial Query Processor Implementation
+### Example: Spatial Field Updater Implementation
 
-The Spatial Query Processor demonstrates the framework patterns:
+The Spatial Field Updater demonstrates the framework patterns:
 
 #### Spatial Processing Workflow
 1. **Change Detection**: Compare area layer metadata and check EditDate_1 for modified weeds
@@ -575,7 +575,7 @@ graph TD
     subgraph "GitHub Actions Workflows"
         CORE[Core Framework Tests<br/>- Unit tests<br/>- Integration tests<br/>- Security scanning]
         
-        SPATIAL[Spatial Processor<br/>- Daily 9:05pm NZT<br/>- Dev/Prod matrix<br/>- 120min timeout]
+        SPATIAL[Spatial Field Updater<br/>- Daily 9:05pm NZT<br/>- Dev/Prod matrix<br/>- 120min timeout]
         
         SYNC[Data Sync Module<br/>- Hourly schedule<br/>- Dev/Prod matrix<br/>- 30min timeout]
         
@@ -821,7 +821,7 @@ The core framework provides performance optimizations that benefit all modules:
 #### Current Scale Metrics
 ```
 Framework Scale (Current):
-├── Spatial Query Processor
+├── Spatial Field Updater
 │   ├── 50,000 weed locations
 │   ├── 20,000 records/year growth
 │   └── 2-hour processing window
@@ -837,7 +837,7 @@ Framework Scale (Current):
 
 #### Performance Optimization Strategies
 
-**Spatial Query Processor**:
+**Spatial Field Updater**:
 - **Spatial Indexing**: Optimized spatial relationship queries
 - **Geometry Simplification**: Reduce complexity for large polygons
 - **Batch Size**: 100 records per update operation
