@@ -1,0 +1,26 @@
+{
+  "area_layers": {
+    "region": {
+      "layer_id": "7759fbaecd4649dea39c4ac2b07fc4ab",
+      "source_code_field": "REGC_code",
+      "target_field": "RegionCode",
+      "description": "Region boundary polygons for spatial intersection"
+    },
+    "district": {
+      "layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0",
+      "source_code_field": "TALB_code",
+      "target_field": "DistrictCode",
+      "description": "District boundary polygons for spatial intersection"
+    }
+  },
+  "processing": {
+    "batch_size": 100,
+    "max_retries": 3,
+    "timeout_seconds": 1800,
+    "spatial_relationship": "intersects"
+  },
+  "metadata_table": {
+    "production_name": "Weeds Area Metadata",
+    "development_name": "XXX Weeds Area Metadata DEV"
+  }
+} 
