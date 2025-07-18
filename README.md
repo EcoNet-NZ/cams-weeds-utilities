@@ -83,7 +83,43 @@ cams-utilities/
    pip install -r requirements.txt
    ```
 
+## Environment Variables
+
+For ArcGIS connectivity (development environment):
+
+```bash
+# Required for ArcGIS connection testing
+export ARCGIS_DEV_USERNAME="your-arcgis-username@domain.com"
+export ARCGIS_DEV_PASSWORD="your-secure-password"
+
+# Optional: Override default configuration directory
+export CAMS_CONFIG_DIR="./config"
+```
+
+**GitHub Secrets Setup:**
+For automated deployment, configure these secrets in your GitHub repository:
+- `ARCGIS_DEV_USERNAME` - ArcGIS development username
+- `ARCGIS_DEV_PASSWORD` - ArcGIS development password
+
 ## Usage
+
+### ArcGIS Connectivity
+
+```python
+from src.connection import ArcGISConnector, EnvironmentValidator, ConnectionTester
+from src.config import ConfigLoader
+
+# Initialize components
+config_loader = ConfigLoader()
+
+# Validate environment setup
+validator = EnvironmentValidator(config_loader)
+validation_results = validator.validate_dev_environment()
+
+# Test connection and layer access
+tester = ConnectionTester(config_loader)
+test_results = tester.test_connection()
+```
 
 ### Basic Configuration Loading
 
