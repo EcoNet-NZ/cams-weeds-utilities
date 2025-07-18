@@ -1,4 +1,4 @@
-# CAMS Spatial Query Optimization - Business Requirements
+# CAMS Spatial Field Updates - Business Requirements
 
 ## Business Context
 CAMS (Content and Asset Management System) operates as an ArcGIS Online dashboard tracking weed management across regions and districts. The system currently manages 50,000 weed location records with 20,000 new records added annually.

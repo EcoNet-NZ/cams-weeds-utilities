@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap delivers the CAMS Utilities modular framework through iterative, value-driven development. The framework provides shared infrastructure for multiple processing modules, with the Spatial Query Optimization system as the first implementation. Each increment provides testable functionality that builds toward a comprehensive automation platform for the Conservation Activity Management System.
+This roadmap delivers the CAMS Utilities modular framework through iterative, value-driven development. The framework provides shared infrastructure for multiple processing modules, with the Spatial Field Updater system as the first implementation. Each increment provides testable functionality that builds toward a comprehensive automation platform for the Conservation Activity Management System.
 
 ---
 
@@ -36,25 +36,25 @@ This roadmap delivers the CAMS Utilities modular framework through iterative, va
 
 ---
 
-## Phase 2: Spatial Query Processor Module (Now)
+## Phase 2: Spatial Field Updater Module (Now)
 
-### 3. Spatial Query Processor Module Structure
+### 3. Spatial Field Updater Module Structure
 
-- **Outcome:** Complete module structure implementing ModuleProcessor interface for spatial optimization
+- **Outcome:** Complete module structure implementing ModuleProcessor interface for spatial field updates
 - **Increment:**
-  - Create modules/spatial_query_processor/ module directory structure
-  - Implement spatial_query_processor/main.py as module entry point
-  - Create spatial_config.json with spatial processing configuration
-  - Implement SpatialProcessor class inheriting from ModuleProcessor interface
-  - Create spatial_query_processor/models/ with WeedLocation and ProcessMetadata data models
-  - Add spatial_query_processor/tests/ with module-specific test structure
+  - Create modules/spatial_field_updater/ module directory structure
+  - Implement spatial_field_updater/main.py as module entry point
+  - Create field_updater_config.json with spatial processing configuration
+  - Implement SpatialFieldUpdater class inheriting from ModuleProcessor interface
+  - Create spatial_field_updater/models/ with WeedLocation and ProcessMetadata data models
+  - Add spatial_field_updater/tests/ with module-specific test structure
   - Integrate module with shared core framework (config, connection, logging, exceptions)
 - **Quality:** Unit tests for module structure, integration tests with core framework
 - **Feedback:** Validate module interface compliance and core framework integration
 
 ### 4. Layer Access and Metadata Management
 
-- **Outcome:** Reliable access to spatial layers with metadata retrieval for the spatial processor
+- **Outcome:** Reliable access to spatial layers with metadata retrieval for the spatial field updater
 - **Increment:**
   - Implement layer access operations using shared ArcGISConnector
   - Add layer metadata retrieval (Date updated, field schema validation) for WeedLocations, Region, District layers
@@ -109,7 +109,7 @@ This roadmap delivers the CAMS Utilities modular framework through iterative, va
 
 - **Outcome:** Safe testing capability for the spatial module without data modification
 - **Increment:**
-  - Implement --dry-run mode in spatial_query_processor/main.py following framework patterns
+  - Implement --dry-run mode in spatial_field_updater/main.py following framework patterns
   - Add dry-run support across all spatial processing components
   - Create comprehensive logging of planned changes without execution using shared logging
   - Add validation reporting and processing metrics in dry-run mode
@@ -121,7 +121,7 @@ This roadmap delivers the CAMS Utilities modular framework through iterative, va
 
 - **Outcome:** Complete spatial processing workflow with module interface compliance
 - **Increment:**
-  - Complete SpatialProcessor implementation with ModuleProcessor interface
+  - Complete SpatialFieldUpdater implementation with ModuleProcessor interface
   - Add complete workflow coordination between all spatial components
   - Create comprehensive error handling using shared exception hierarchy
   - Implement command-line interface in main.py with environment and dry-run options
@@ -129,11 +129,11 @@ This roadmap delivers the CAMS Utilities modular framework through iterative, va
 - **Quality:** Unit tests for orchestration, end-to-end integration tests
 - **Feedback:** Validate complete workflow with real development environment data
 
-### 10. GitHub Actions for Spatial Processor
+### 10. GitHub Actions for Spatial Field Updater
 
 - **Outcome:** Automated daily spatial processing with multi-environment deployment
 - **Increment:**
-  - Create spatial-processor.yml GitHub Actions workflow with matrix strategy for dev/prod
+  - Create spatial-field-updater.yml GitHub Actions workflow with matrix strategy for dev/prod
   - Implement cron scheduling for 9:05pm NZT daily execution
   - Add environment-specific secret management using existing GitHub secrets
   - Create artifact collection for spatial processing logs
@@ -245,6 +245,6 @@ This roadmap delivers the CAMS Utilities modular framework through iterative, va
 - **Feedback-Driven:** Each phase incorporates user feedback to inform subsequent module development and framework enhancements
 - **Framework-First Approach:** Core framework foundation (Phase 1) enables rapid development of multiple processing modules
 - **Module Independence:** Each module can be developed, tested, and deployed independently while leveraging shared infrastructure
-- **Value Delivery:** Each increment delivers testable, valuable functionality with the spatial processor as the first complete implementation
+- **Value Delivery:** Each increment delivers testable, valuable functionality with the spatial field updater as the first complete implementation
 - **Extensibility Focus:** Framework design prioritizes extensibility and reusability for future CAMS automation needs
 - **Quality Focus:** Comprehensive testing of both framework components and individual modules ensures reliability across the ecosystem 
