@@ -9,6 +9,7 @@ from .custom_exceptions import (
     CAMSBaseException,
     CAMSConfigurationError,
     CAMSValidationError,
+    CAMSAuthenticationError,
     CAMSConnectionError,
     CAMSProcessingError,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "CAMSBaseException",
     "CAMSConfigurationError",
     "CAMSValidationError",
+    "CAMSAuthenticationError",
     "CAMSConnectionError",
     "CAMSProcessingError",
 ] 

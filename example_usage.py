@@ -121,5 +121,53 @@ def main():
     print("All components are working as expected.")
 
 
+def demo_arcgis_connectivity():
+    """Demonstrate ArcGIS connectivity functionality."""
+    print("\n=== ArcGIS Connectivity Demo ===")
+    
+    try:
+        from src.connection import (
+            ArcGISConnector, 
+            EnvironmentValidator, 
+            ConnectionTester
+        )
+        
+        # Initialize components
+        config_loader = ConfigLoader()
+        
+        # Validate environment
+        print("\n1. Environment Validation:")
+        validator = EnvironmentValidator(config_loader)
+        validation_results = validator.validate_dev_environment()
+        
+        for check, passed in validation_results.items():
+            status = "✅ PASS" if passed else "❌ FAIL"
+            print(f"   {check}: {status}")
+        
+        # Test connection (if environment variables are set)
+        if validation_results.get('environment_variables'):
+            print("\n2. Connection Testing:")
+            tester = ConnectionTester(config_loader)
+            test_results = tester.test_connection()
+            
+            connection_status = "✅ PASS" if test_results['connection'] else "❌ FAIL"
+            print(f"   Connection: {connection_status}")
+            
+            print(f"   Layer Access:")
+            for layer, accessible in test_results['layer_access'].items():
+                status = "✅" if accessible else "❌"
+                print(f"     {layer}: {status}")
+                
+            if test_results['errors']:
+                print(f"   Errors: {test_results['errors']}")
+        else:
+            print("\n2. Connection Testing: Skipped (missing environment variables)")
+            print("   Set ARCGIS_DEV_USERNAME and ARCGIS_DEV_PASSWORD to test connection")
+        
+    except Exception as e:
+        print(f"ArcGIS connectivity demo failed: {e}")
+
+
 if __name__ == "__main__":
-    main() 
+    main()
+    demo_arcgis_connectivity() 

@@ -47,14 +47,26 @@ class CAMSValidationError(CAMSBaseException):
     pass
 
 
+class CAMSAuthenticationError(CAMSBaseException):
+    """
+    Exception raised when authentication fails.
+    
+    This exception is raised when:
+    - Invalid credentials provided
+    - Authentication configuration errors
+    - Environment variables missing
+    """
+    pass
+
+
 class CAMSConnectionError(CAMSBaseException):
     """
     Exception raised when ArcGIS connection fails.
     
     This exception is raised when:
-    - Authentication fails
     - Network connection issues
     - Service unavailable
+    - Connection timeouts
     """
     pass
 
