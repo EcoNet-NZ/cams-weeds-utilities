@@ -1,9 +1,12 @@
 """
-CAMS Spatial Query Optimization System
+CAMS Framework Core Package
 
-This package contains the core modules for the CAMS spatial query optimization system
-that eliminates real-time spatial queries from the CAMS dashboard by pre-calculating
-region and district assignments for weed locations.
+This package contains the core infrastructure for the CAMS (Conservation Activity
+Management System) utilities framework, providing shared components and interfaces
+for processing modules.
 """
 
-__version__ = "1.0.0" 
+from .interfaces import ModuleProcessor, ProcessingResult, ModuleStatus
+
+__version__ = "1.0.0"
+__all__ = ['ModuleProcessor', 'ProcessingResult', 'ModuleStatus'] 
