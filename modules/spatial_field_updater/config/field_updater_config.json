@@ -4,23 +4,71 @@
       "layer_id": "7759fbaecd4649dea39c4ac2b07fc4ab",
       "source_code_field": "REGC_code",
       "target_field": "RegionCode",
-      "description": "Region boundary polygons for spatial intersection"
+      "description": "Region boundary polygons for spatial intersection",
+      "expected_fields": {
+        "REGC_code": "string",
+        "OBJECTID": "integer",
+        "GlobalID": "string",
+        "Shape": "geometry"
+      }
     },
     "district": {
       "layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0",
       "source_code_field": "TALB_code",
       "target_field": "DistrictCode",
-      "description": "District boundary polygons for spatial intersection"
+      "description": "District boundary polygons for spatial intersection",
+      "expected_fields": {
+        "TALB_code": "string",
+        "OBJECTID": "integer",
+        "GlobalID": "string",
+        "Shape": "geometry"
+      }
     }
   },
   "processing": {
     "batch_size": 100,
     "max_retries": 3,
     "timeout_seconds": 1800,
-    "spatial_relationship": "intersects"
+    "spatial_relationship": "intersects",
+    "metadata_refresh_interval": 3600
   },
   "metadata_table": {
     "production_name": "Weeds Area Metadata",
-    "development_name": "XXX Weeds Area Metadata DEV"
+    "development_name": "XXX Weeds Area Metadata DEV",
+    "required_fields": {
+      "ProcessTimestamp": "date",
+      "RegionLayerID": "string",
+      "RegionLayerUpdated": "date",
+      "DistrictLayerID": "string",
+      "DistrictLayerUpdated": "date",
+      "ProcessStatus": "string",
+      "RecordsProcessed": "integer",
+      "ProcessingDuration": "double",
+      "ErrorMessage": "string"
+    }
+  },
+  "validation": {
+    "required_fields": ["object_id", "global_id", "geometry", "edit_date"],
+    "field_mappings": {
+      "object_id": "OBJECTID",
+      "global_id": "GlobalID",
+      "edit_date": "EditDate_1",
+      "region_code": "RegionCode",
+      "district_code": "DistrictCode"
+    },
+    "field_types": {
+      "OBJECTID": "integer",
+      "GlobalID": "string",
+      "EditDate_1": "date",
+      "RegionCode": "string",
+      "DistrictCode": "string",
+      "Shape": "geometry"
+    }
+  },
+  "layer_access": {
+    "cache_duration": 300,
+    "retry_attempts": 3,
+    "timeout_seconds": 30,
+    "validate_on_startup": true
   }
 } 
