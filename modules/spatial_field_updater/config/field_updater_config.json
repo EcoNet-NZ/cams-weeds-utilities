@@ -70,5 +70,25 @@
     "retry_attempts": 3,
     "timeout_seconds": 30,
     "validate_on_startup": true
+  },
+  "change_detection": {
+    "enabled": true,
+    "edit_date_field": "EditDate_1",
+    "thresholds": {
+      "full_reprocess_percentage": 25.0,
+      "incremental_threshold_percentage": 1.0,
+      "max_incremental_records": 1000,
+      "no_change_threshold_percentage": 0.1
+    },
+    "processing_decisions": {
+      "default_processing_type": "incremental_update",
+      "force_full_reprocess_days": 7,
+      "max_incremental_age_hours": 24
+    },
+    "performance": {
+      "batch_size": 100,
+      "query_timeout_seconds": 60,
+      "max_records_per_query": 5000
+    }
   }
 } 
