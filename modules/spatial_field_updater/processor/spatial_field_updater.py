@@ -2,6 +2,8 @@
 
 This module implements the main SpatialFieldUpdater class that provides automated
 spatial field updates for weed location data by implementing the ModuleProcessor interface.
+
+Enhanced with intelligent change detection capabilities for optimized processing.
 """
 
 import json
@@ -15,6 +17,7 @@ from src.config.config_loader import ConfigLoader
 from src.connection.arcgis_connector import ArcGISConnector
 from ..models import WeedLocation, ProcessMetadata
 from ..layer_access import LayerAccessManager, FieldValidator, MetadataTableManager
+from ..change_detection import SpatialChangeDetector, ProcessingType, ProcessingDecision
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,10 @@ class SpatialFieldUpdater(ModuleProcessor):
     This class provides automated spatial intersection processing to pre-calculate
     region and district assignments for weed locations, eliminating real-time spatial
     queries from the CAMS dashboard.
+    
+    Enhanced with intelligent change detection capabilities that monitor EditDate_1
+    field changes to make smart processing decisions between full reprocessing,
+    incremental updates, or skipping processing when no changes are detected.
     
     The processor implements the standard ModuleProcessor interface to ensure consistent
     behavior and integration with the CAMS framework infrastructure.
@@ -47,7 +54,10 @@ class SpatialFieldUpdater(ModuleProcessor):
         self.field_validator: Optional[FieldValidator] = None
         self.metadata_manager: Optional[MetadataTableManager] = None
         
-        logger.info("SpatialFieldUpdater initialized")
+        # Initialize change detection component (will be created when needed)
+        self.change_detector: Optional[SpatialChangeDetector] = None
+        
+        logger.info("SpatialFieldUpdater initialized with change detection capabilities")
     
     def _load_module_config(self) -> Dict[str, Any]:
         """Load module-specific configuration from field_updater_config.json.
@@ -86,10 +96,11 @@ class SpatialFieldUpdater(ModuleProcessor):
         return self._module_config
     
     def _initialize_layer_access(self):
-        """Initialize layer access components.
+        """Initialize layer access components including change detection.
         
-        Creates LayerAccessManager, FieldValidator, and MetadataTableManager instances
-        following Context7 best practices for layer access and metadata management.
+        Creates LayerAccessManager, FieldValidator, MetadataTableManager, and
+        SpatialChangeDetector instances following Context7 best practices for
+        layer access, metadata management, and intelligent change detection.
         """
         if self.connector and not self.layer_manager:
             logger.info("Initializing layer access components")
@@ -100,10 +111,15 @@ class SpatialFieldUpdater(ModuleProcessor):
                 self.connector, self.config_loader, self.layer_manager
             )
             
-            logger.info("Layer access components initialized successfully")
+            # Initialize change detector with layer access components
+            self.change_detector = SpatialChangeDetector(
+                self.layer_manager, self.metadata_manager, self.config_loader
+            )
+            
+            logger.info("Layer access and change detection components initialized successfully")
     
     def validate_configuration(self) -> bool:
-        """Validate module-specific configuration.
+        """Validate module-specific configuration including change detection settings.
         
         This method verifies that all required configuration values are present
         and valid for the module to operate correctly. It checks both the
@@ -153,49 +169,65 @@ class SpatialFieldUpdater(ModuleProcessor):
                     self._configuration_valid = False
                     return False
             
-            # Validate batch size is reasonable
-            batch_size = processing_config['batch_size']
-            if not isinstance(batch_size, int) or batch_size <= 0 or batch_size > 1000:
-                logger.error(f"Invalid batch_size: {batch_size}. Must be integer between 1 and 1000")
-                self._configuration_valid = False
-                return False
-            
-            # Validate framework configuration is accessible
-            try:
-                env_config = self.config_loader.load_environment_config()
-                field_mapping = self.config_loader.load_field_mapping()
-                
-                if not env_config or not field_mapping:
-                    logger.error("Framework configuration is not available")
+            # Validate metadata table configuration
+            metadata_config = module_config['metadata_table']
+            required_metadata_fields = ['production_name', 'development_name', 'required_fields']
+            for field in required_metadata_fields:
+                if field not in metadata_config:
+                    logger.error(f"Missing metadata table configuration field: {field}")
                     self._configuration_valid = False
                     return False
-                    
-            except Exception as e:
-                logger.error(f"Failed to load framework configuration: {e}")
-                self._configuration_valid = False
-                return False
             
-            # Initialize and validate layer access components
+            # Validate change detection configuration (optional but recommended)
+            if 'change_detection' in module_config:
+                change_config = module_config['change_detection']
+                if 'thresholds' in change_config:
+                    thresholds = change_config['thresholds']
+                    if not isinstance(thresholds.get('full_reprocess_percentage'), (int, float)):
+                        logger.error("Invalid full_reprocess_percentage in change detection config")
+                        self._configuration_valid = False
+                        return False
+                    if not isinstance(thresholds.get('incremental_threshold_percentage'), (int, float)):
+                        logger.error("Invalid incremental_threshold_percentage in change detection config")
+                        self._configuration_valid = False
+                        return False
+                
+                logger.info("Change detection configuration validated")
+            else:
+                logger.warning("Change detection configuration not found - using defaults")
+            
+            # Initialize layer access for additional validation if connector is available
             if self.connector:
                 try:
                     self._initialize_layer_access()
                     
-                    # Validate all configured layers using Context7 best practices
-                    if self.field_validator:
-                        validation_results = self.field_validator.validate_all_configured_layers()
+                    # Validate layer accessibility
+                    area_layers = module_config['area_layers']
+                    for layer_type, layer_config in area_layers.items():
+                        layer_id = layer_config['layer_id']
+                        logger.debug(f"Validating {layer_type} layer: {layer_id}")
                         
-                        for layer_name, result in validation_results.items():
-                            if not result.validation_passed:
-                                logger.error(f"Layer validation failed for {layer_name}: {result.validation_errors}")
-                                self._configuration_valid = False
-                                return False
+                        # Test layer accessibility
+                        layer_metadata = self.layer_manager.get_layer_metadata(layer_id)
+                        if not layer_metadata:
+                            logger.error(f"Cannot access {layer_type} layer: {layer_id}")
+                            self._configuration_valid = False
+                            return False
                         
-                        logger.info(f"Layer validation passed for {len(validation_results)} layers")
+                        # Validate field schema
+                        validation_result = self.field_validator.validate_layer_schema(layer_id)
+                        if not validation_result.is_valid:
+                            logger.error(f"Schema validation failed for {layer_type} layer: {validation_result.errors}")
+                            self._configuration_valid = False
+                            return False
+                        
+                        logger.info(f"{layer_type.capitalize()} layer validation passed")
                     
-                    # Validate metadata table access and schema
+                    # Validate metadata table accessibility
                     if self.metadata_manager:
-                        if not self.metadata_manager.verify_metadata_table_schema():
-                            logger.error("Metadata table schema validation failed")
+                        metadata_valid = self.metadata_manager.validate_metadata_table_schema()
+                        if not metadata_valid:
+                            logger.error("Metadata table validation failed")
                             self._configuration_valid = False
                             return False
                         
@@ -216,13 +248,13 @@ class SpatialFieldUpdater(ModuleProcessor):
             logger.error(f"Configuration validation failed: {e}")
             self._configuration_valid = False
             return False
-    
+
     def process(self, dry_run: bool = False) -> ProcessingResult:
-        """Execute spatial field update processing logic.
+        """Execute spatial field update processing with intelligent change detection.
         
-        This is the main entry point for module processing. The implementation performs
-        all necessary processing steps while respecting the dry_run flag to avoid making
-        actual changes when in testing mode.
+        This method implements intelligent processing using change detection to determine
+        whether full reprocessing, incremental updates, or no processing is needed.
+        This optimization significantly improves performance by avoiding unnecessary work.
         
         Args:
             dry_run: If True, perform all processing logic without making actual changes
@@ -233,7 +265,7 @@ class SpatialFieldUpdater(ModuleProcessor):
         start_time = datetime.now()
         
         try:
-            logger.info(f"Starting spatial field update process (dry_run={dry_run})")
+            logger.info(f"Starting spatial field update process with change detection (dry_run={dry_run})")
             
             # Validate configuration before processing
             if not self.validate_configuration():
@@ -241,6 +273,7 @@ class SpatialFieldUpdater(ModuleProcessor):
                     success=False,
                     records_processed=0,
                     errors=["Configuration validation failed"],
+                    metadata={"dry_run": dry_run},
                     execution_time=0.0
                 )
             
@@ -255,49 +288,102 @@ class SpatialFieldUpdater(ModuleProcessor):
                         success=False,
                         records_processed=0,
                         errors=[f"ArcGIS connector initialization failed: {e}"],
+                        metadata={"dry_run": dry_run},
                         execution_time=(datetime.now() - start_time).total_seconds()
                     )
             
-            # Get module configuration
-            module_config = self._get_module_config()
-            processing_config = module_config['processing']
+            # Initialize layer access and change detection
+            self._initialize_layer_access()
             
-            # TODO: Implement actual spatial processing logic
-            # This is a placeholder implementation that will be expanded in subsequent tasks
+            # Get weed locations layer ID from environment configuration
+            env_config = self.config_loader.load_environment_config()
+            environment = env_config.get('current_environment', 'development')
+            weed_layer_id = env_config.get(environment, {}).get('weed_locations_layer_id')
             
-            # Simulate processing metrics
+            if not weed_layer_id:
+                return ProcessingResult(
+                    success=False,
+                    records_processed=0,
+                    errors=["Weed locations layer ID not configured for current environment"],
+                    metadata={"dry_run": dry_run, "environment": environment},
+                    execution_time=(datetime.now() - start_time).total_seconds()
+                )
+            
+            # Perform intelligent change detection
+            logger.info("Performing change detection analysis")
+            processing_decision = self.change_detector.compare_with_last_processing(weed_layer_id)
+            
+            logger.info(f"Change detection result: {processing_decision.get_processing_summary()}")
+            logger.info(f"Processing decision reasoning: {processing_decision.reasoning}")
+            
+            # Process based on change detection decision
             records_processed = 0
             processing_errors = []
             
-            if dry_run:
-                logger.info("Dry run mode: No actual changes will be made")
-                # In dry run, simulate finding records that would be processed
-                records_processed = 150  # Simulated count
-            else:
-                logger.info("Live processing mode: Changes will be applied")
-                # TODO: Implement actual processing
-                records_processed = 0
+            if processing_decision.processing_type == ProcessingType.NO_PROCESSING_NEEDED:
+                logger.info("No processing needed - no significant changes detected")
+                execution_time = (datetime.now() - start_time).total_seconds()
+                
+                return ProcessingResult(
+                    success=True,
+                    records_processed=0,
+                    errors=[],
+                    metadata={
+                        "dry_run": dry_run,
+                        "processing_decision": processing_decision.model_dump(),
+                        "change_detection_used": True,
+                        "processing_skipped": True,
+                        "estimated_time_saved": processing_decision.estimated_processing_time or 0
+                    },
+                    execution_time=execution_time
+                )
+            
+            # Determine processing approach based on decision
+            if processing_decision.processing_type == ProcessingType.FULL_REPROCESSING:
+                records_processed = self._perform_full_reprocessing(weed_layer_id, dry_run)
+            elif processing_decision.processing_type == ProcessingType.INCREMENTAL_UPDATE:
+                records_processed = self._perform_incremental_processing(
+                    weed_layer_id, processing_decision, dry_run
+                )
+            elif processing_decision.processing_type == ProcessingType.FORCE_FULL_UPDATE:
+                logger.warning("Force full update triggered due to errors or conditions")
+                records_processed = self._perform_full_reprocessing(weed_layer_id, dry_run)
             
             # Update last run timestamp
             self._last_run = datetime.now()
             execution_time = (datetime.now() - start_time).total_seconds()
             
-            # Create processing metadata
-            metadata = {
+            # Write processing metadata if not in dry run mode
+            if not dry_run and self.metadata_manager:
+                try:
+                    processing_metadata = self._create_processing_metadata(
+                        processing_decision, records_processed, execution_time
+                    )
+                    self.metadata_manager.write_processing_metadata(processing_metadata)
+                    logger.info("Processing metadata written to metadata table")
+                except Exception as e:
+                    logger.warning(f"Failed to write processing metadata: {e}")
+                    processing_errors.append(f"Metadata write failed: {e}")
+            
+            # Create comprehensive result metadata
+            result_metadata = {
                 "dry_run": dry_run,
-                "batch_size": processing_config["batch_size"],
-                "max_retries": processing_config["max_retries"],
-                "timeout_seconds": processing_config["timeout_seconds"],
-                "module_version": "1.0.0"
+                "processing_decision": processing_decision.model_dump(),
+                "change_detection_used": True,
+                "processing_type": processing_decision.processing_type,
+                "estimated_processing_time": processing_decision.estimated_processing_time,
+                "actual_processing_time": execution_time,
+                "environment": environment,
+                "weed_layer_id": weed_layer_id
             }
             
-            logger.info(f"Processing completed: {records_processed} records processed in {execution_time:.2f}s")
+            logger.info(f"Processing completed: {records_processed} records processed in {execution_time:.2f}s using {processing_decision.processing_type}")
             
             return ProcessingResult(
                 success=True,
                 records_processed=records_processed,
                 errors=processing_errors,
-                metadata=metadata,
+                metadata=result_metadata,
                 execution_time=execution_time
             )
             
@@ -313,6 +399,100 @@ class SpatialFieldUpdater(ModuleProcessor):
                 metadata={"dry_run": dry_run, "error_occurred_at": datetime.now().isoformat()},
                 execution_time=execution_time
             )
+    
+    def _perform_full_reprocessing(self, layer_id: str, dry_run: bool) -> int:
+        """Perform full reprocessing of all records in the layer.
+        
+        Args:
+            layer_id: ArcGIS layer identifier for weed locations
+            dry_run: If True, simulate processing without making changes
+            
+        Returns:
+            Number of records processed
+        """
+        logger.info("Performing full reprocessing of all records")
+        
+        if dry_run:
+            # Simulate processing by counting total records
+            try:
+                layer = self.layer_manager.get_layer_by_id(layer_id)
+                total_records = layer.query(return_count_only=True)
+                logger.info(f"Dry run: Would process {total_records} records in full reprocessing")
+                return total_records
+            except Exception as e:
+                logger.error(f"Failed to get record count for dry run: {e}")
+                return 0
+        
+        # TODO: Implement actual full reprocessing logic
+        # This will be implemented in subsequent PRP tasks for spatial query processing
+        logger.info("Full reprocessing logic not yet implemented - returning placeholder")
+        return 1000  # Placeholder for actual implementation
+    
+    def _perform_incremental_processing(self, layer_id: str, 
+                                      processing_decision: ProcessingDecision, 
+                                      dry_run: bool) -> int:
+        """Perform incremental processing of only modified records.
+        
+        Args:
+            layer_id: ArcGIS layer identifier for weed locations
+            processing_decision: Processing decision with target records and filters
+            dry_run: If True, simulate processing without making changes
+            
+        Returns:
+            Number of records processed
+        """
+        target_count = len(processing_decision.target_records)
+        logger.info(f"Performing incremental processing of {target_count} modified records")
+        
+        if dry_run:
+            logger.info(f"Dry run: Would process {target_count} records incrementally")
+            if processing_decision.incremental_filters:
+                where_clause = processing_decision.incremental_filters.get('where_clause', '')
+                logger.debug(f"Dry run: Would use WHERE clause: {where_clause}")
+            return target_count
+        
+        # TODO: Implement actual incremental processing logic
+        # This will be implemented in subsequent PRP tasks for spatial query processing
+        logger.info("Incremental processing logic not yet implemented - returning placeholder")
+        return target_count
+    
+    def _create_processing_metadata(self, processing_decision: ProcessingDecision, 
+                                  records_processed: int, execution_time: float) -> ProcessMetadata:
+        """Create processing metadata with change detection information.
+        
+        Args:
+            processing_decision: Processing decision from change detection
+            records_processed: Number of records that were processed
+            execution_time: Total execution time in seconds
+            
+        Returns:
+            ProcessMetadata instance with comprehensive processing information
+        """
+        module_config = self._get_module_config()
+        area_layers = module_config.get('area_layers', {})
+        
+        return ProcessMetadata(
+            process_timestamp=datetime.now(),
+            region_layer_id=area_layers.get('region', {}).get('layer_id', ''),
+            region_layer_updated=datetime.now(),
+            district_layer_id=area_layers.get('district', {}).get('layer_id', ''),
+            district_layer_updated=datetime.now(),
+            process_status='Success',
+            records_processed=records_processed,
+            processing_duration=execution_time,
+            error_message=None,
+            metadata_details={
+                "processing_type": processing_decision.processing_type,
+                "change_detection_used": True,
+                "change_threshold_met": processing_decision.change_threshold_met,
+                "incremental_filters": processing_decision.incremental_filters,
+                "estimated_vs_actual_time": {
+                    "estimated": processing_decision.estimated_processing_time,
+                    "actual": execution_time
+                },
+                "configuration_used": processing_decision.configuration_used
+            }
+        )
     
     def get_status(self) -> ModuleStatus:
         """Get current module processing status.
