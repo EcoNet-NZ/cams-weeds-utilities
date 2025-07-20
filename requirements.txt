@@ -1,8 +1,8 @@
 # CAMS Spatial Query Optimization System - Dependencies
 # Python 3.12+ required
 
-# Core ArcGIS API for Python
-arcgis>=2.4.1
+# Core ArcGIS API for Python (latest version compatible with Python 3.13)
+arcgis>=2.0.0
 
 # Retry logic for robust operations
 tenacity>=8.0.0
@@ -29,3 +29,6 @@ jsonschema>=4.17.0
 
 # Date/time handling
 python-dateutil>=2.8.0 
+
+# Fix for keyring dependency version specification issue
+keyring>=21.8.0,<22.0.0 
