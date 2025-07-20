@@ -1,6 +1,0 @@
-# Dependencies for simple_spatial_update.py
-# ArcGIS API for Python - spatial data processing and feature layer operations
-arcgis>=2.0.0
-
-# Tenacity - retry library for robust error handling with decorators
-tenacity>=8.0.0 

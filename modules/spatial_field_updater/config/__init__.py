@@ -1,1 +1,0 @@
-"""Spatial Field Updater Configuration""" 

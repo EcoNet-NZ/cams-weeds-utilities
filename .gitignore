@@ -167,4 +167,7 @@ cython_debug/
 # Windows
 Thumbs.db
 ehthumbs.db
-Desktop.ini 
+Desktop.ini
+
+# CAMS Utilities - Environment-specific timestamp files
+.last_run_* 
