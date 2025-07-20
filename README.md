@@ -39,6 +39,50 @@ python spatial_field_updater/spatial_field_updater.py --env development
 
 ---
 
+### 📱 [Field Maps Web Map Lister](field_maps_webmap_lister/)
+
+Automated tool for identifying and cataloging ArcGIS Online Web Maps configured for use with ArcGIS Field Maps.
+
+**Purpose**: Discovers web maps with offline capabilities, sync-enabled layers, and Field Maps-specific configurations across your organization.
+
+**Key Features**:
+- 🔍 Automated detection of Field Maps-ready web maps
+- 📋 Comprehensive analysis of offline areas and sync capabilities
+- 📊 Detailed reporting with export to JSON and Excel spreadsheets
+- 📈 Sharing analysis (Public, Organisation, Group-specific)
+- 🏷️ Tag-based and configuration-based discovery
+- ⚡ High-volume batch processing for large organizations
+- 🎛️ Configurable limits via environment variables
+
+**Quick Start**:
+```bash
+# Set up environment
+export ARCGIS_USERNAME="your_username"
+export ARCGIS_PASSWORD="your_password"
+export ARCGIS_PORTAL_URL="https://your-portal.arcgis.com"
+export MAX_WEBMAPS="10000"  # Optional: limit number of web maps to analyze
+
+# Run Field Maps web map analyzer
+python field_maps_webmap_lister/field_maps_webmap_lister.py
+```
+
+**What it detects**:
+- ✅ Web maps with offline map areas
+- ✅ Sync-enabled feature layers
+- ✅ Field Maps-related tags (`field maps`, `mobile`, `offline`)
+- ✅ Editable layers with data collection capabilities
+- ✅ Web maps with appropriate configuration for mobile use
+
+**Outputs**:
+- 📄 JSON file with detailed analysis results
+- 📈 Excel spreadsheet with sharing information and clickable settings URLs
+- 📋 CSV file for broader compatibility
+- 📊 Console summary with statistics and sharing breakdown
+
+**📚 [View detailed documentation →](field_maps_webmap_lister/README.md)**
+
+---
+
 ## Repository Structure
 
 ```
@@ -50,6 +94,11 @@ cams-utilities/
 │   ├── spatial_field_updater.py         # Main processing script
 │   ├── map_weed_locations.py           # Visualization tool
 │   └── map_unassigned_points.py        # Analysis tool
+├── field_maps_webmap_lister/           # Field Maps web map discovery tool
+│   ├── README.md                        # Complete documentation
+│   ├── field_maps_webmap_lister.py     # Main analysis script
+│   ├── test_field_maps_tool.py         # Test suite
+│   └── sample_*.html/json              # Example outputs
 ├── README.md                           # This overview file
 └── requirements.txt                    # Shared dependencies
 ```

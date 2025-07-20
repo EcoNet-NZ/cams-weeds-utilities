@@ -1,8 +1,9 @@
-# Dependencies for CAMS Spatial Field Updater
+# Dependencies for CAMS Utilities
 # Core spatial processing libraries
-arcgis>=2.0.0          # ArcGIS API for Python - feature layer operations
+arcgis>=2.4.0          # ArcGIS API for Python - feature layer operations (compatible with Python 3.12)
 tenacity>=8.0.0        # Retry logic for robust error handling
 geopandas>=0.13.0      # High-performance spatial operations 
 shapely>=2.0.0         # Geometry validation and repair
 matplotlib>=3.5.0      # Map visualization
-pandas>=1.3.0          # Data manipulation 
+pandas>=1.5.0          # Data manipulation (updated for better compatibility) 
+openpyxl>=3.0.0        # Excel file export for Field Maps web map reports 
