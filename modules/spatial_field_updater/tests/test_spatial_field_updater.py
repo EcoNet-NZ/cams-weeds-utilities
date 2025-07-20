@@ -310,11 +310,28 @@ class TestSpatialFieldUpdaterWithChangeDetection:
         mock_layer.query.assert_called_once_with(return_count_only=True)
     
     def test_perform_full_reprocessing_live_mode(self, spatial_updater):
-        """Test full reprocessing in live mode (placeholder implementation)."""
+        """Test full reprocessing in live mode with spatial processor integration."""
+        # Mock the spatial processor and its results
+        mock_spatial_result = Mock()
+        mock_spatial_result.updated_count = 500
+        mock_spatial_result.get_processing_summary.return_value = "Processed 500 records successfully"
+        mock_spatial_result.get_assignment_breakdown.return_value = {"both_assigned": 400, "region_only": 100}
+        mock_spatial_result.spatial_metrics = Mock()
+        mock_spatial_result.spatial_metrics.total_intersections_calculated = 1000
+        mock_spatial_result.spatial_metrics.get_success_rate.return_value = 0.95
+        mock_spatial_result.spatial_metrics.get_total_processing_time.return_value = 10.5
+        
+        mock_spatial_processor = Mock()
+        mock_spatial_processor.process_spatial_intersections.return_value = mock_spatial_result
+        spatial_updater.spatial_processor = mock_spatial_processor
+        
         result = spatial_updater._perform_full_reprocessing("layer-123", dry_run=False)
         
-        # Should return placeholder value until actual implementation
-        assert result == 1000
+        # Should return updated count from spatial processing result
+        assert result == 500
+        
+        # Verify spatial processor was called correctly
+        mock_spatial_processor.process_spatial_intersections.assert_called_once_with("layer-123")
     
     def test_perform_incremental_processing_dry_run(self, spatial_updater):
         """Test incremental processing in dry run mode."""
@@ -331,7 +348,7 @@ class TestSpatialFieldUpdaterWithChangeDetection:
         assert result == 3  # Number of target records
     
     def test_perform_incremental_processing_live_mode(self, spatial_updater):
-        """Test incremental processing in live mode (placeholder implementation)."""
+        """Test incremental processing in live mode with spatial processor integration."""
         mock_decision = ProcessingDecision(
             processing_type=ProcessingType.INCREMENTAL_UPDATE,
             target_records=["123", "456"],
@@ -339,10 +356,27 @@ class TestSpatialFieldUpdaterWithChangeDetection:
             full_reprocess_required=False
         )
         
+        # Mock the spatial processor and its results
+        mock_spatial_result = Mock()
+        mock_spatial_result.updated_count = 2
+        mock_spatial_result.get_processing_summary.return_value = "Processed 2 records successfully"
+        mock_spatial_result.get_assignment_breakdown.return_value = {"both_assigned": 2}
+        mock_spatial_result.spatial_metrics = Mock()
+        mock_spatial_result.spatial_metrics.total_intersections_calculated = 4
+        mock_spatial_result.spatial_metrics.get_success_rate.return_value = 1.0
+        mock_spatial_result.spatial_metrics.get_total_processing_time.return_value = 0.5
+        
+        mock_spatial_processor = Mock()
+        mock_spatial_processor.process_spatial_intersections.return_value = mock_spatial_result
+        spatial_updater.spatial_processor = mock_spatial_processor
+        
         result = spatial_updater._perform_incremental_processing("layer-123", mock_decision, dry_run=False)
         
-        # Should return target record count until actual implementation
+        # Should return updated count from spatial processing result
         assert result == 2
+        
+        # Verify spatial processor was called correctly with target records
+        mock_spatial_processor.process_spatial_intersections.assert_called_once_with("layer-123", ["123", "456"])
     
     def test_create_processing_metadata_with_change_detection(self, spatial_updater, sample_module_config):
         """Test processing metadata creation includes change detection information."""
