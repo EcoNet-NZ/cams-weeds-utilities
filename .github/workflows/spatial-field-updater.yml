@@ -130,7 +130,7 @@ jobs:
               raise ValueError(f'Environment \"{environment}\" not found in configuration. Available: {list(config.keys())}')
 
           env_config = config[environment]
-          required_keys = ['weed_locations_layer_id', 'regions_layer_id', 'districts_layer_id']
+          required_keys = ['weed_locations_layer_id', 'region_layer_id', 'district_layer_id']
           
           for key in required_keys:
               if key not in env_config:
@@ -140,8 +140,8 @@ jobs:
 
           print(f'✅ Configuration validation passed for environment: {environment}')
           print(f'📍 Weed locations layer: {env_config[\"weed_locations_layer_id\"]}')
-          print(f'🌍 Regions layer: {env_config[\"regions_layer_id\"]}')
-          print(f'🏛️ Districts layer: {env_config[\"districts_layer_id\"]}')
+          print(f'🌍 Regions layer: {env_config[\"region_layer_id\"]}')
+          print(f'🏛️ Districts layer: {env_config[\"district_layer_id\"]}')
           "
       
       - name: 🎯 Run Spatial Field Update
