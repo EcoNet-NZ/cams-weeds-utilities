@@ -34,22 +34,7 @@ Add the following secrets to your repository (`Settings` → `Secrets and variab
 
 #### 2. Environment Configuration
 
-Ensure your `config/environment_config.json` contains the required layer IDs:
-
-```json
-{
-  "development": {
-    "weed_locations_layer_id": "your_dev_layer_id",
-    "region_layer_id": "your_region_layer_id",
-    "district_layer_id": "your_district_layer_id"
-  },
-  "production": {
-    "weed_locations_layer_id": "your_prod_layer_id",
-    "region_layer_id": "your_region_layer_id", 
-    "district_layer_id": "your_district_layer_id"
-  }
-}
-```
+Ensure your `spatial_field_updater/config/environment_config.json` contains the required layer IDs for each environment. See the [spatial field updater configuration documentation](../spatial_field_updater/README.md#configuration) for details.
 
 ### 🚀 Usage
 
@@ -70,22 +55,28 @@ Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
 ### 📊 Workflow Steps
 
 1. **🏗️ Setup**: Checkout code, install Python, install dependencies
-2. **🔧 Configuration**: Set environment variables and validate configuration
-3. **🎯 Spatial Processing**: Run the spatial field updater script
-4. **🗺️ Map Generation**: Create visualization maps (optional)
-5. **📊 Reporting**: Generate summary reports
-6. **📦 Artifacts**: Upload logs, maps, and reports
-7. **🔔 Notifications**: Alert on failures (scheduled runs only)
+2. **📅 Load Timestamp**: Retrieve last run timestamp from workflow-state branch (incremental mode)
+3. **🔧 Configuration**: Set environment variables and validate configuration
+4. **🎯 Spatial Processing**: Run the spatial field updater script
+5. **🗺️ Map Generation**: Create visualization maps (optional)
+6. **📊 Reporting**: Generate summary reports
+7. **💾 Store Timestamp**: Save new timestamp to workflow-state branch (on success)
+8. **📦 Artifacts**: Upload logs, maps, and reports
+9. **🔔 Notifications**: Alert on failures (scheduled runs only)
 
-### 📁 Artifacts
+### 📁 Artifacts & State Storage
 
-Each workflow run generates artifacts containing:
+**Workflow Artifacts** (retained for 30 days):
 - **Logs**: Detailed execution logs for each step
 - **Summary Report**: Markdown report with run details and status
 - **Maps**: PNG/HTML visualization maps (if enabled)
-- **Timestamps**: Last run timestamp files for change detection
 
-Artifacts are retained for 30 days and can be downloaded from the workflow run page.
+**Timestamp Storage** (permanent):
+- **Workflow State Branch**: Timestamps stored in dedicated `workflow-state` branch
+- **Per-Environment**: Separate timestamps for development and production
+- **Conflict-Free**: Eliminates merge conflicts with main development branch
+
+Artifacts can be downloaded from the workflow run page. Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-state).
 
 ### 🔍 Monitoring
 
@@ -106,7 +97,7 @@ Artifacts are retained for 30 days and can be downloaded from the workflow run p
 #### Common Issues
 
 **"Environment not found in configuration"**
-- Verify `config/environment_config.json` contains the specified environment
+- Verify `spatial_field_updater/config/environment_config.json` contains the specified environment
 - Check that all required layer IDs are present
 
 **"Authentication failed"**
@@ -120,6 +111,16 @@ Artifacts are retained for 30 days and can be downloaded from the workflow run p
 **Map generation failures**
 - Maps are optional and won't fail the main processing
 - Check if spatial data is valid and accessible
+
+**"Processing all records unexpectedly"**
+- Check if workflow-state branch exists and contains timestamp files
+- Verify timestamps are being loaded correctly in the "Load Previous Timestamp" step
+- Manual runs default to processing all records unless timestamp exists
+
+**Timestamp/State Issues**
+- Timestamps are stored in the `workflow-state` branch (separate from main)
+- Force pushes to workflow-state branch prevent merge conflicts
+- First run creates the workflow-state branch automatically
 
 #### Debugging Steps
 

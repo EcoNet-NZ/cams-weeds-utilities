@@ -4,7 +4,7 @@
 Automate annual status updates for weed instance records in ArcGIS Feature Layer based on business rules, with comprehensive logging and error handling.
 
 ## Configuration
-- **Layer ID**: Use existing `weed_locations_layer_id` from `config/environment_config.json`
+- **Layer ID**: Use existing `weed_locations_layer_id` from `spatial_field_updater/config/environment_config.json`
 - **Environment Support**: Development/production environment selection
 - **Authentication**: ArcGIS credentials via environment variables
 

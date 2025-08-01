@@ -85,6 +85,37 @@ jobs:
           echo "ARCGIS_PASSWORD=${ARCGIS_PASSWORD}" >> $GITHUB_ENV
           echo "ARCGIS_PORTAL_URL=${ARCGIS_PORTAL_URL}" >> $GITHUB_ENV
       
+      - name: 📅 Load Previous Timestamp
+        if: env.PROCESSING_MODE == 'changed'
+        run: |
+          echo "🔍 Loading previous timestamp for ${{ matrix.environment }} environment..."
+          
+          # Configure git for potential branch operations
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Try to get timestamp from workflow-state branch
+          if git ls-remote --exit-code --heads origin workflow-state > /dev/null 2>&1; then
+            echo "📥 Found workflow-state branch, fetching..."
+            git fetch origin workflow-state
+            
+            # Try to get the timestamp file for this environment
+            TIMESTAMP_FILE="spatial_field_updater/.last_run_${{ matrix.environment }}"
+            if git cat-file -e origin/workflow-state:$TIMESTAMP_FILE 2>/dev/null; then
+              # Extract timestamp from the branch
+              git show origin/workflow-state:$TIMESTAMP_FILE > $TIMESTAMP_FILE
+              TIMESTAMP=$(cat $TIMESTAMP_FILE)
+              echo "✅ Loaded previous timestamp: $TIMESTAMP"
+              echo "📊 Will process records modified since: $TIMESTAMP"
+            else
+              echo "ℹ️ No previous timestamp found for ${{ matrix.environment }} environment"
+              echo "🔄 Will process all records (first run for this environment)"
+            fi
+          else
+            echo "ℹ️ No workflow-state branch found - first run of workflow"
+            echo "🔄 Will process all records"
+          fi
+      
       - name: 🧪 Validate Configuration
         run: |
           echo "Running validation for environment: ${{ matrix.environment }}"
@@ -93,7 +124,7 @@ jobs:
           import os
           
           # Validate configuration file
-          with open('config/environment_config.json', 'r') as f:
+          with open('spatial_field_updater/config/environment_config.json', 'r') as f:
               config = json.load(f)
           
           env = '${{ matrix.environment }}'
@@ -206,6 +237,66 @@ jobs:
           
           echo "📄 Summary report generated"
       
+      - name: 💾 Store Timestamp in State Branch
+        if: steps.spatial_update.outputs.success == 'true'
+        run: |
+          echo "💾 Storing timestamp for ${{ matrix.environment }} environment..."
+          
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Get current timestamp (when the processing completed)
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S)
+          echo "📅 Current timestamp: $TIMESTAMP"
+          
+          # Check if workflow-state branch exists
+          if git ls-remote --exit-code --heads origin workflow-state > /dev/null 2>&1; then
+            echo "📥 Checking out existing workflow-state branch"
+            git fetch origin workflow-state
+            git checkout -b workflow-state origin/workflow-state
+          else
+            echo "🆕 Creating new workflow-state branch"
+            git checkout --orphan workflow-state
+            git rm -rf . 2>/dev/null || true
+            
+            # Create initial README for the state branch
+            cat > README.md << 'EOF'
+          # Workflow State Branch
+          
+          This branch stores automated workflow timestamps and state files for the CAMS Spatial Field Updater.
+          
+          ## Contents
+          - `spatial_field_updater/.last_run_development` - Last successful run timestamp for development environment
+          - `spatial_field_updater/.last_run_production` - Last successful run timestamp for production environment
+          
+          ## Purpose
+          These timestamps enable incremental processing by tracking when each environment was last processed.
+          Only records modified since the last timestamp are processed on subsequent runs.
+          EOF
+            
+            git add README.md
+            git commit -m "Initial workflow state branch setup"
+          fi
+          
+          # Create/update timestamp file
+          mkdir -p spatial_field_updater
+          echo "$TIMESTAMP" > spatial_field_updater/.last_run_${{ matrix.environment }}
+          
+          # Commit and force push (avoids any merge conflicts)
+          git add spatial_field_updater/.last_run_${{ matrix.environment }}
+          git commit -m "chore: update ${{ matrix.environment }} timestamp to $TIMESTAMP
+
+          - Workflow: ${{ github.workflow }}
+          - Run ID: ${{ github.run_id }}
+          - Event: ${{ github.event_name }}
+          - Processing Mode: ${{ env.PROCESSING_MODE }}"
+          
+          git push origin workflow-state --force
+          
+          echo "✅ Timestamp stored successfully in workflow-state branch"
+          echo "🔗 View branch: https://github.com/${{ github.repository }}/tree/workflow-state"
+      
       - name: 📦 Upload Artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -215,7 +306,6 @@ jobs:
             *.log
             summary_${{ matrix.environment }}.md
             maps/${{ matrix.environment }}/
-            .last_run_${{ matrix.environment }}
           retention-days: 30
       
       - name: 💬 Notify on Failure

@@ -345,7 +345,6 @@ env.verbose = True
 
 This tool integrates with the CAMS utilities ecosystem:
 
-- **Environment Configuration**: Uses shared `config/environment_config.json`
 - **Authentication**: Uses standard CAMS environment variables
 - **Reporting**: Compatible with existing CAMS reporting workflows
 

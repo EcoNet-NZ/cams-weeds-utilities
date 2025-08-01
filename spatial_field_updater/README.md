@@ -52,7 +52,7 @@ python spatial_field_updater/spatial_field_updater.py --env development --mode a
 
 ### Environment Configuration
 
-The script reads layer IDs from `config/environment_config.json`:
+The script reads layer IDs from `spatial_field_updater/config/environment_config.json`:
 
 ```json
 {
@@ -91,11 +91,17 @@ The script reads layer IDs from `config/environment_config.json`:
 ### Change Detection Logic
 
 #### File-based Tracking
-- Last run timestamp stored in environment-specific files: `.last_run_{environment}` (repository root)
+- Last run timestamp stored in environment-specific files: `.last_run_{environment}` (spatial_field_updater directory)
 - Uses `EditDate_1 > last_run_timestamp` for incremental processing
 - Falls back to processing all features if no previous run found
 - Each environment (development, production) tracks timestamps independently
-- Example files: `.last_run_development`, `.last_run_production`
+- Example files: `spatial_field_updater/.last_run_development`, `spatial_field_updater/.last_run_production`
+
+#### GitHub Workflow Integration
+- **Automated Runs**: Timestamps stored in dedicated `workflow-state` branch
+- **Conflict-Free**: Eliminates merge conflicts with main development branch
+- **Persistent**: Timestamps persist indefinitely in git history
+- **Per-Environment**: Separate tracking for development and production workflows
 
 #### Smart Updates
 - Only updates features where RegionCode or DistrictCode actually changed
@@ -231,7 +237,7 @@ where_clause = f"EditDate_1 > timestamp '{last_run}'" if last_run else "1=1"
 
 ### Environment Configuration
 
-Configure layer IDs in `config/environment_config.json`:
+Configure layer IDs in `spatial_field_updater/config/environment_config.json`:
 
 ```json
 {
@@ -254,6 +260,39 @@ Configure layer IDs in `config/environment_config.json`:
 export ARCGIS_USERNAME="your_username"
 export ARCGIS_PASSWORD="your_password"  
 export ARCGIS_PORTAL_URL="https://your-portal.arcgis.com"
+```
+
+## Example Output
+
+The tool provides clear, intuitive progress reporting:
+
+```
+Processing 54384 weed locations...
+Converting to GeoPandas...
+Loading boundary layers with GeoPandas...
+  Loaded 17 region boundaries
+  Loaded 88 district boundaries
+Performing bulk spatial joins with GeoPandas...
+  Converting all layers to EPSG:2193...
+  Validating and fixing geometries...
+  Joining with regions...
+  → 811 points lie outside region boundaries
+    → Searching for nearest boundaries within 2000m...
+    → 804 points assigned to nearest boundaries (within 2000m)
+  → 7 points remain unassigned (>2km from any region boundary)
+  Joining with districts...
+  → 811 points lie outside district boundaries
+    → Searching for nearest boundaries within 2000m...
+    → 804 points assigned to nearest boundaries (within 2000m)
+  → 7 points remain unassigned (>2km from any district boundary)
+
+✅ Spatial assignment complete:
+   Region assignment: 54,377/54,384 points (99.99%)
+   District assignment: 54,377/54,384 points (99.99%)
+
+Identifying features needing updates...
+Found 0 features needing updates
+No updates needed
 ```
 
 ## Performance & Scalability

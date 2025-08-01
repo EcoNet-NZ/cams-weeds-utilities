@@ -15,10 +15,11 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
-# Configuration - timestamp files are environment-specific
+# Configuration - timestamp files are environment-specific, stored in same directory as script
 def get_last_run_file(environment):
-    """Get environment-specific last run file path"""
-    return f".last_run_{environment}"
+    """Get environment-specific last run file path in the spatial_field_updater directory"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(script_dir, f".last_run_{environment}")
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
 def connect_arcgis():
@@ -28,7 +29,8 @@ def connect_arcgis():
     return GIS(portal_url, username, password)
 
 def get_layers(gis, environment):
-    env_config_path = 'config/environment_config.json'
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    env_config_path = os.path.join(script_dir, 'config', 'environment_config.json')
     with open(env_config_path, 'r') as f:
         env_config = json.load(f)
     
@@ -178,7 +180,7 @@ def find_nearest_boundary(point_gdf, boundary_gdf, code_field, max_distance_m=10
     if len(point_gdf) == 0 or len(boundary_gdf) == 0:
         return point_gdf
     
-    print(f"    Finding nearest boundaries for {len(point_gdf)} unassigned points...")
+    print(f"    → Searching for nearest boundaries within {max_distance_m}m...")
     
     # Calculate distance from each point to each boundary
     point_gdf = point_gdf.copy()
@@ -207,7 +209,7 @@ def find_nearest_boundary(point_gdf, boundary_gdf, code_field, max_distance_m=10
     
     assigned_count = sum(1 for code in nearest_codes if code is not None)
     if assigned_count > 0:
-        print(f"    Assigned {assigned_count} points to nearest boundaries (within {max_distance_m}m)")
+        print(f"    → {assigned_count} points assigned to nearest boundaries (within {max_distance_m}m)")
     
     return point_gdf
 
@@ -242,13 +244,19 @@ def spatial_join_bulk(weeds_gdf, regions_gdf, districts_gdf):
     # Find unassigned regions and try nearest boundary assignment
     unassigned_regions = weeds_with_regions[weeds_with_regions['REGC_code'].isna()]
     if len(unassigned_regions) > 0:
-        print(f"  Found {len(unassigned_regions)} points without region assignment")
+        print(f"  → {len(unassigned_regions)} points lie outside region boundaries")
         nearest_regions = find_nearest_boundary(unassigned_regions, regions_gdf, 'REGC_code', max_distance_m=2000)
         
         # Update the main dataframe with nearest assignments
+        assigned_count = 0
         for idx, row in nearest_regions.iterrows():
             if row['nearest_code'] is not None:
                 weeds_with_regions.loc[idx, 'REGC_code'] = row['nearest_code']
+                assigned_count += 1
+        
+        remaining_unassigned = len(unassigned_regions) - assigned_count
+        if remaining_unassigned > 0:
+            print(f"  → {remaining_unassigned} points remain unassigned (>2km from any region boundary)")
     
     # Spatial join with districts  
     print("  Joining with districts...")
@@ -262,17 +270,32 @@ def spatial_join_bulk(weeds_gdf, regions_gdf, districts_gdf):
     # Find unassigned districts and try nearest boundary assignment
     unassigned_districts = weeds_with_all[weeds_with_all['TALB_code'].isna()]
     if len(unassigned_districts) > 0:
-        print(f"  Found {len(unassigned_districts)} points without district assignment")
+        print(f"  → {len(unassigned_districts)} points lie outside district boundaries")
         nearest_districts = find_nearest_boundary(unassigned_districts, districts_gdf, 'TALB_code', max_distance_m=2000)
         
         # Update the main dataframe with nearest assignments
+        assigned_count = 0
         for idx, row in nearest_districts.iterrows():
             if row['nearest_code'] is not None:
                 weeds_with_all.loc[idx, 'TALB_code'] = row['nearest_code']
+                assigned_count += 1
+        
+        remaining_unassigned = len(unassigned_districts) - assigned_count
+        if remaining_unassigned > 0:
+            print(f"  → {remaining_unassigned} points remain unassigned (>2km from any district boundary)")
     
     # Clean up the results
     weeds_with_all['RegionCode_new'] = weeds_with_all['REGC_code']
     weeds_with_all['DistrictCode_new'] = weeds_with_all['TALB_code']
+    
+    # Calculate and display assignment success rate
+    total_points = len(weeds_with_all)
+    region_assigned = weeds_with_all['RegionCode_new'].notna().sum()
+    district_assigned = weeds_with_all['DistrictCode_new'].notna().sum()
+    
+    print("\n✅ Spatial assignment complete:")
+    print(f"   Region assignment: {region_assigned:,}/{total_points:,} points ({region_assigned/total_points*100:.2f}%)")
+    print(f"   District assignment: {district_assigned:,}/{total_points:,} points ({district_assigned/total_points*100:.2f}%)")
     
     # Keep only necessary columns
     result_cols = ['OBJECTID', 'RegionCode', 'DistrictCode', 'RegionCode_new', 'DistrictCode_new']

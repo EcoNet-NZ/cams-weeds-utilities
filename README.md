@@ -100,7 +100,7 @@ The spatial field updater includes a comprehensive GitHub Actions workflow for a
 
 **Quick Setup**:
 1. **Configure GitHub Secrets**: Add ArcGIS credentials for dev/prod environments
-2. **Validate Configuration**: Ensure `config/environment_config.json` has required layer IDs
+2. **Validate Configuration**: Ensure `spatial_field_updater/config/environment_config.json` has required layer IDs
 3. **Enable Workflow**: The workflow runs automatically or can be triggered manually
 
 **Manual Execution**: Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
@@ -117,9 +117,9 @@ cams-utilities/
 │   └── workflows/                       # GitHub Actions automation
 │       ├── spatial-field-updater.yml   # Daily spatial processing workflow
 │       └── README.md                    # Workflow documentation
-├── config/
-│   └── environment_config.json         # Shared environment configurations
 ├── spatial_field_updater/              # Spatial field assignment tool
+│   ├── config/
+│   │   └── environment_config.json     # Environment configurations
 │   ├── README.md                        # Complete documentation
 │   ├── spatial_field_updater.py         # Main processing script
 │   ├── map_weed_locations.py           # Visualization tool
@@ -157,22 +157,7 @@ cams-utilities/
 
 ### Environment Configuration
 
-Tools in this repository read layer IDs and settings from `config/environment_config.json`:
-
-```json
-{
-  "development": {
-    "weed_locations_layer_id": "development_layer_id",
-    "region_layer_id": "7759fbaecd4649dea39c4ac2b07fc4ab",
-    "district_layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0"
-  },
-  "production": {
-    "weed_locations_layer_id": "production_layer_id",
-    "region_layer_id": "7759fbaecd4649dea39c4ac2b07fc4ab",
-    "district_layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0"
-  }
-}
-```
+The spatial field updater requires environment-specific layer IDs configured in `spatial_field_updater/config/environment_config.json`. See the [spatial field updater documentation](spatial_field_updater/README.md#configuration) for details.
 
 ### Environment Variables
 
@@ -214,7 +199,7 @@ pip install -r requirements.txt
 - **Environment Safety**: All tools must support explicit environment selection
 - **Error Handling**: Use robust retry logic with `@retry` decorators
 - **Documentation**: Comprehensive README.md for each tool
-- **Configuration**: Use the shared config/environment_config.json format
+- **Configuration**: Environment-specific configuration per tool directory
 - **Logging**: Provide clear progress and error reporting
 
 ### Testing
