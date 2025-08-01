@@ -142,7 +142,11 @@ jobs:
       - name: 📊 Summary
         if: always()
         run: |
-          STATUS=${{ steps.spatial_update.outputs.success == 'true' && '✅ Success' || '❌ Failed' }}
+          if [ "${{ steps.spatial_update.outputs.success }}" = "true" ]; then
+            STATUS="✅ Success"
+          else
+            STATUS="❌ Failed"
+          fi
           
           cat >> $GITHUB_STEP_SUMMARY << EOF
           # 📍 CAMS Spatial Field Updater
