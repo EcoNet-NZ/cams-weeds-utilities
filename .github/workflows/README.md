@@ -8,13 +8,13 @@ The `spatial-field-updater.yml` workflow provides automated daily processing of 
 
 ### 🎯 Features
 
-- **🕰️ Scheduled Runs**: Daily execution at 6 AM UTC (7-8 PM NZ time)
+- **🕰️ Scheduled Runs**: Daily execution at 6 AM UTC (7-8 PM NZ time) on development environment
 - **⚡ Manual Triggers**: On-demand execution with configurable options
-- **🌍 Multi-Environment**: Support for development and production environments
+- **🌍 Environment Selection**: Choose development or production environment
 - **📊 Processing Modes**: Changed records (incremental) or full dataset processing
-- **🗺️ Map Generation**: Optional visualization maps and analysis reports
-- **📦 Artifact Storage**: Logs, maps, and reports stored for 30 days
-- **🔔 Error Notifications**: Failure alerts for scheduled runs
+- **📈 Workflow Summary**: Real-time statistics showing updated and unassigned points
+- **💾 Conflict-Free State**: Timestamps stored in dedicated branch to avoid merge conflicts
+- **⚡ Streamlined**: Simplified single-job execution with minimal overhead
 
 ### 🔧 Setup Instructions
 
@@ -39,7 +39,7 @@ Ensure your `spatial_field_updater/config/environment_config.json` contains the 
 ### 🚀 Usage
 
 #### Scheduled Execution
-The workflow runs automatically daily at 6 AM UTC. It processes both development and production environments using the `changed` mode (incremental processing).
+The workflow runs automatically daily at 6 AM UTC on the `development` environment using the `changed` mode (incremental processing).
 
 #### Manual Execution
 Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
@@ -49,7 +49,6 @@ Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
 - **Processing Mode**: 
   - `changed` - Only process records modified since last run (recommended)
   - `all` - Process all records (use for testing or data refresh)
-- **Generate Maps**: Enable/disable visualization map generation
 - **Sample Size**: Specify a number to process only a subset (for testing)
 
 ### 📊 Workflow Steps
@@ -58,33 +57,25 @@ Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
 2. **📅 Load Timestamp**: Retrieve last run timestamp from workflow-state branch (incremental mode)
 3. **🔧 Configuration**: Set environment variables and validate configuration
 4. **🎯 Spatial Processing**: Run the spatial field updater script
-5. **🗺️ Map Generation**: Create visualization maps (optional)
-6. **📊 Reporting**: Generate summary reports
-7. **💾 Store Timestamp**: Save new timestamp to workflow-state branch (on success)
-8. **📦 Artifacts**: Upload logs, maps, and reports
-9. **🔔 Notifications**: Alert on failures (scheduled runs only)
+5. **💾 Store Timestamp**: Save new timestamp to workflow-state branch (on success)
+6. **📈 Workflow Summary**: Generate processing statistics and results summary
 
-### 📁 Artifacts & State Storage
-
-**Workflow Artifacts** (retained for 30 days):
-- **Logs**: Detailed execution logs for each step
-- **Summary Report**: Markdown report with run details and status
-- **Maps**: PNG/HTML visualization maps (if enabled)
+### 💾 State Storage
 
 **Timestamp Storage** (permanent):
 - **Workflow State Branch**: Timestamps stored in dedicated `workflow-state` branch
 - **Per-Environment**: Separate timestamps for development and production
 - **Conflict-Free**: Eliminates merge conflicts with main development branch
 
-Artifacts can be downloaded from the workflow run page. Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-state).
+Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-state).
 
 ### 🔍 Monitoring
 
 #### Success Indicators
 - ✅ All steps complete without errors
 - ✅ Spatial assignments updated successfully
-- ✅ Maps generated (if enabled)
-- ✅ Artifacts uploaded
+- ✅ Workflow summary generated with statistics
+- ✅ Timestamp stored in workflow-state branch
 
 #### Failure Scenarios
 - ❌ Authentication failures (check secrets)
@@ -108,10 +99,6 @@ Artifacts can be downloaded from the workflow run page. Timestamps can be viewed
 - Normal for incremental runs when no changes occurred
 - Use `mode: all` to force processing all records
 
-**Map generation failures**
-- Maps are optional and won't fail the main processing
-- Check if spatial data is valid and accessible
-
 **"Processing all records unexpectedly"**
 - Check if workflow-state branch exists and contains timestamp files
 - Verify timestamps are being loaded correctly in the "Load Previous Timestamp" step
@@ -125,9 +112,10 @@ Artifacts can be downloaded from the workflow run page. Timestamps can be viewed
 #### Debugging Steps
 
 1. **Check Configuration**: Review the "Validate Configuration" step output
-2. **Review Logs**: Download artifacts and check detailed logs
+2. **Review Logs**: Check detailed logs in the workflow run page
 3. **Test Manually**: Use `workflow_dispatch` with sample size for testing
 4. **Check Permissions**: Ensure service account has edit permissions on target layers
+5. **Check Summary**: Review workflow summary for processing statistics
 
 ### 📈 Performance
 
@@ -136,34 +124,30 @@ Expected processing times:
 - **54,000 records**: ~10-15 minutes  
 - **100,000+ records**: ~20-30 minutes
 
-The workflow has a 60-minute timeout to accommodate large datasets.
+The workflow has a 30-minute timeout for streamlined execution.
 
 ### 🔒 Security
 
 - **Credentials**: Stored securely in GitHub Secrets
 - **Environment Separation**: Dev/prod credentials are completely separate
 - **Principle of Least Privilege**: Each environment uses dedicated service accounts
-- **Audit Trail**: All runs are logged and artifacts stored
+- **Audit Trail**: All runs are logged with detailed workflow summaries
 
 ### 🏗️ Architecture
 
 ```mermaid
 graph TD
     A[GitHub Actions Trigger] --> B{Event Type}
-    B -->|Schedule| C[Both Environments]
+    B -->|Schedule| C[Development Environment]
     B -->|Manual| D[Selected Environment]
     
-    C --> E[Development Job]
-    C --> F[Production Job]
-    D --> G[Single Environment Job]
+    C --> E[Single Spatial Update Job]
+    D --> E
     
-    E --> H[Spatial Processing]
-    F --> H
-    G --> H
-    
-    H --> I[Map Generation]
-    I --> J[Artifact Upload]
-    J --> K[Summary Report]
+    E --> F[Load Timestamp]
+    F --> G[Spatial Processing]
+    G --> H[Store Timestamp]
+    H --> I[Workflow Summary]
 ```
 
-This workflow provides reliable, automated spatial field updates with comprehensive monitoring and error handling.
+This simplified workflow provides reliable, automated spatial field updates with streamlined execution and comprehensive statistics.
