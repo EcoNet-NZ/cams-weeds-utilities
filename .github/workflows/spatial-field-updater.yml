@@ -1,0 +1,259 @@
+name: CAMS Spatial Field Updater
+
+on:
+  # Scheduled daily run at 6 AM UTC (7 PM NZ Standard Time, 8 PM NZ Daylight Time)
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # Manual trigger with configurable options
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run against'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - production
+      
+      processing_mode:
+        description: 'Processing mode'
+        required: true
+        default: 'changed'
+        type: choice
+        options:
+        - changed
+        - all
+      
+      generate_maps:
+        description: 'Generate visualization maps'
+        required: true
+        default: false
+        type: boolean
+      
+      sample_size:
+        description: 'Sample size for testing (leave empty for all records)'
+        required: false
+        type: string
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  spatial-field-update:
+    name: Update Spatial Fields
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    strategy:
+      matrix:
+        # For scheduled runs, process both environments
+        # For manual runs, only process the selected environment
+        environment: ${{ github.event_name == 'schedule' && fromJson('["development", "production"]') || fromJson(format('["{0}"]', github.event.inputs.environment || 'development')) }}
+    
+    steps:
+      - name: 🏗️ Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 🔧 Configure Environment
+        run: |
+          echo "ENVIRONMENT=${{ matrix.environment }}" >> $GITHUB_ENV
+          echo "PROCESSING_MODE=${{ github.event.inputs.processing_mode || 'changed' }}" >> $GITHUB_ENV
+          echo "GENERATE_MAPS=${{ github.event.inputs.generate_maps || 'true' }}" >> $GITHUB_ENV
+          echo "SAMPLE_SIZE=${{ github.event.inputs.sample_size || '' }}" >> $GITHUB_ENV
+      
+      - name: 🌍 Set ArcGIS Credentials
+        env:
+          # Use environment-specific secrets
+          ARCGIS_USERNAME: ${{ matrix.environment == 'production' && secrets.ARCGIS_USERNAME_PROD || secrets.ARCGIS_USERNAME_DEV }}
+          ARCGIS_PASSWORD: ${{ matrix.environment == 'production' && secrets.ARCGIS_PASSWORD_PROD || secrets.ARCGIS_PASSWORD_DEV }}
+          ARCGIS_PORTAL_URL: ${{ matrix.environment == 'production' && secrets.ARCGIS_PORTAL_URL_PROD || secrets.ARCGIS_PORTAL_URL_DEV }}
+        run: |
+          echo "ARCGIS_USERNAME=${ARCGIS_USERNAME}" >> $GITHUB_ENV
+          echo "ARCGIS_PASSWORD=${ARCGIS_PASSWORD}" >> $GITHUB_ENV
+          echo "ARCGIS_PORTAL_URL=${ARCGIS_PORTAL_URL}" >> $GITHUB_ENV
+      
+      - name: 🧪 Validate Configuration
+        run: |
+          echo "Running validation for environment: ${{ matrix.environment }}"
+          python -c "
+          import json
+          import os
+          
+          # Validate configuration file
+          with open('config/environment_config.json', 'r') as f:
+              config = json.load(f)
+          
+          env = '${{ matrix.environment }}'
+          if env not in config:
+              raise ValueError(f'Environment {env} not found in configuration')
+          
+          required_fields = ['weed_locations_layer_id', 'region_layer_id', 'district_layer_id']
+          for field in required_fields:
+              if field not in config[env]:
+                  raise ValueError(f'Required field {field} missing for environment {env}')
+          
+          print(f'✅ Configuration valid for environment: {env}')
+          print(f'📍 Weed Locations Layer: {config[env][\"weed_locations_layer_id\"]}')
+          print(f'🏞️ Region Layer: {config[env][\"region_layer_id\"]}')
+          print(f'📋 District Layer: {config[env][\"district_layer_id\"]}')
+          "
+      
+      - name: 🎯 Run Spatial Field Updater
+        id: spatial_update
+        run: |
+          echo "🚀 Starting spatial field update for ${{ matrix.environment }} environment"
+          echo "📊 Processing mode: ${{ env.PROCESSING_MODE }}"
+          
+          # Build command
+          cmd="python spatial_field_updater/spatial_field_updater.py --env ${{ matrix.environment }} --mode ${{ env.PROCESSING_MODE }}"
+          
+          # Add sample size if specified
+          if [ -n "${{ env.SAMPLE_SIZE }}" ]; then
+            cmd="$cmd --sample ${{ env.SAMPLE_SIZE }}"
+            echo "🔬 Sample size: ${{ env.SAMPLE_SIZE }}"
+          fi
+          
+          echo "💻 Command: $cmd"
+          
+          # Run the updater and capture output
+          if $cmd 2>&1 | tee spatial_update_${{ matrix.environment }}.log; then
+            echo "✅ Spatial field update completed successfully"
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Spatial field update failed"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+      
+      - name: 🗺️ Generate Visualization Maps
+        if: env.GENERATE_MAPS == 'true' && steps.spatial_update.outputs.success == 'true'
+        run: |
+          echo "🗺️ Generating visualization maps for ${{ matrix.environment }}"
+          
+          # Create maps directory
+          mkdir -p maps/${{ matrix.environment }}
+          
+          # Generate region map
+          echo "📍 Generating region map..."
+          if python spatial_field_updater/map_weed_locations.py --env ${{ matrix.environment }} --layer regions 2>&1 | tee map_regions_${{ matrix.environment }}.log; then
+            echo "✅ Region map generated"
+          else
+            echo "⚠️ Region map generation failed (non-critical)"
+          fi
+          
+          # Generate district map
+          echo "📋 Generating district map..."
+          if python spatial_field_updater/map_weed_locations.py --env ${{ matrix.environment }} --layer districts 2>&1 | tee map_districts_${{ matrix.environment }}.log; then
+            echo "✅ District map generated"
+          else
+            echo "⚠️ District map generation failed (non-critical)"
+          fi
+          
+          # Generate unassigned points analysis
+          echo "🔍 Generating unassigned points analysis..."
+          if python spatial_field_updater/map_unassigned_points.py --env ${{ matrix.environment }} 2>&1 | tee map_unassigned_${{ matrix.environment }}.log; then
+            echo "✅ Unassigned points analysis generated"
+          else
+            echo "⚠️ Unassigned points analysis failed (non-critical)"
+          fi
+          
+          # Move generated files to maps directory if they exist
+          find . -name "*.png" -o -name "*.html" | head -20 | while read file; do
+            if [ -f "$file" ]; then
+              mv "$file" maps/${{ matrix.environment }}/
+              echo "📁 Moved $file to maps directory"
+            fi
+          done
+      
+      - name: 📊 Generate Summary Report
+        if: always()
+        run: |
+          echo "📊 Generating summary report for ${{ matrix.environment }}"
+          
+          cat > summary_${{ matrix.environment }}.md << EOF
+          # CAMS Spatial Field Updater - ${{ matrix.environment }} Environment
+          
+          **Run Details:**
+          - 🕐 **Run Time**: $(date -u)
+          - 🌍 **Environment**: ${{ matrix.environment }}
+          - 📊 **Processing Mode**: ${{ env.PROCESSING_MODE }}
+          - ✅ **Status**: ${{ steps.spatial_update.outputs.success == 'true' && 'Success' || 'Failed' }}
+          - 🔬 **Sample Size**: ${{ env.SAMPLE_SIZE || 'All records' }}
+          - 🗺️ **Maps Generated**: ${{ env.GENERATE_MAPS }}
+          
+          **Configuration:**
+          - 🏗️ **Workflow**: ${{ github.workflow }}
+          - 🔄 **Run ID**: ${{ github.run_id }}
+          - 📝 **Run Number**: ${{ github.run_number }}
+          - 🌟 **Event**: ${{ github.event_name }}
+          
+          **Logs:**
+          Check the artifacts section for detailed logs and generated maps.
+          EOF
+          
+          echo "📄 Summary report generated"
+      
+      - name: 📦 Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spatial-updater-results-${{ matrix.environment }}-${{ github.run_number }}
+          path: |
+            *.log
+            summary_${{ matrix.environment }}.md
+            maps/${{ matrix.environment }}/
+            .last_run_${{ matrix.environment }}
+          retention-days: 30
+      
+      - name: 💬 Notify on Failure
+        if: failure() && github.event_name == 'schedule'
+        run: |
+          echo "❌ Spatial field updater failed for ${{ matrix.environment }} environment"
+          echo "📧 In a production setup, this would send notifications to:"
+          echo "   - Slack/Teams channel"
+          echo "   - Email alerts to administrators"
+          echo "   - Issue creation in repository"
+          echo ""
+          echo "🔍 Check the workflow logs and artifacts for details"
+          echo "🔗 Workflow URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  # Summary job that runs after all environments complete
+  summary:
+    name: Workflow Summary
+    runs-on: ubuntu-latest
+    needs: spatial-field-update
+    if: always()
+    
+    steps:
+      - name: 📋 Generate Workflow Summary
+        run: |
+          echo "# CAMS Spatial Field Updater - Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run Details:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🕐 **Completed**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔄 **Run ID**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌟 **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check job results
+          if [[ "${{ needs.spatial-field-update.result }}" == "success" ]]; then
+            echo "✅ **Status**: All environments processed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Status**: Some environments failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Check the artifacts section for detailed logs and generated maps." >> $GITHUB_STEP_SUMMARY

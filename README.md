@@ -83,10 +83,40 @@ python field_maps_webmap_lister/field_maps_webmap_lister.py
 
 ---
 
+## 🔄 Automated Workflows (GitHub Actions)
+
+### Spatial Field Updater Automation
+
+The spatial field updater includes a comprehensive GitHub Actions workflow for automated daily processing.
+
+**Features**:
+- 🕰️ **Scheduled Daily Runs**: Automatic execution at 6 AM UTC (7-8 PM NZ time)
+- ⚡ **Manual Triggers**: On-demand execution with configurable options
+- 🌍 **Multi-Environment**: Separate development and production processing
+- 📊 **Processing Modes**: Incremental (changed records) or full dataset
+- 🗺️ **Map Generation**: Optional visualization maps and analysis reports
+- 📦 **Artifact Storage**: Logs, maps, and reports retained for 30 days
+- 🔔 **Error Notifications**: Failure alerts for scheduled runs
+
+**Quick Setup**:
+1. **Configure GitHub Secrets**: Add ArcGIS credentials for dev/prod environments
+2. **Validate Configuration**: Ensure `config/environment_config.json` has required layer IDs
+3. **Enable Workflow**: The workflow runs automatically or can be triggered manually
+
+**Manual Execution**: Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
+
+**📚 [View workflow documentation →](.github/workflows/README.md)**
+
+---
+
 ## Repository Structure
 
 ```
 cams-utilities/
+├── .github/
+│   └── workflows/                       # GitHub Actions automation
+│       ├── spatial-field-updater.yml   # Daily spatial processing workflow
+│       └── README.md                    # Workflow documentation
 ├── config/
 │   └── environment_config.json         # Shared environment configurations
 ├── spatial_field_updater/              # Spatial field assignment tool
