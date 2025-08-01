@@ -54,11 +54,11 @@ Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
 ### 📊 Workflow Steps
 
 1. **🏗️ Setup**: Checkout code, install Python, install dependencies
-2. **📅 Load Timestamp**: Retrieve last run timestamp from workflow-state branch (incremental mode)
-3. **🔧 Configuration**: Set environment variables and validate configuration
-4. **🎯 Spatial Processing**: Run the spatial field updater script
-5. **💾 Store Timestamp**: Save new timestamp to workflow-state branch (on success)
-6. **📈 Workflow Summary**: Generate processing statistics and results summary
+2. **🔧 Configure**: Set environment variables and credentials
+3. **📅 Load Timestamp**: Retrieve last run timestamp (incremental mode only)
+4. **🎯 Process**: Run the spatial field updater script
+5. **💾 Store Timestamp**: Save new timestamp (on success)
+6. **📊 Summary**: Generate processing statistics
 
 ### 💾 State Storage
 
@@ -79,7 +79,6 @@ Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-stat
 
 #### Failure Scenarios
 - ❌ Authentication failures (check secrets)
-- ❌ Configuration errors (check environment_config.json)
 - ❌ Network issues (automatic retry built-in)
 - ❌ Data validation errors (check source data)
 
@@ -111,11 +110,10 @@ Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-stat
 
 #### Debugging Steps
 
-1. **Check Configuration**: Review the "Validate Configuration" step output
-2. **Review Logs**: Check detailed logs in the workflow run page
-3. **Test Manually**: Use `workflow_dispatch` with sample size for testing
-4. **Check Permissions**: Ensure service account has edit permissions on target layers
-5. **Check Summary**: Review workflow summary for processing statistics
+1. **Review Logs**: Check detailed logs in the workflow run page
+2. **Test Manually**: Use `workflow_dispatch` with sample size for testing
+3. **Check Permissions**: Ensure service account has edit permissions on target layers
+4. **Check Summary**: Review workflow summary for processing statistics
 
 ### 📈 Performance
 

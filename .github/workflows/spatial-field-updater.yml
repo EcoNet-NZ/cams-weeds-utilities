@@ -55,21 +55,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: 🔧 Configure Environment
+      - name: 🔧 Configure
         run: |
-          # Set environment (default to development for scheduled runs)
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "ENVIRONMENT=development" >> $GITHUB_ENV
-          else
-            echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
-          fi
-          
+          ENV=${{ github.event_name == 'schedule' && 'development' || github.event.inputs.environment }}
+          echo "ENVIRONMENT=$ENV" >> $GITHUB_ENV
           echo "PROCESSING_MODE=${{ github.event.inputs.processing_mode || 'changed' }}" >> $GITHUB_ENV
           echo "SAMPLE_SIZE=${{ github.event.inputs.sample_size || '' }}" >> $GITHUB_ENV
       
-      - name: 🌍 Set ArcGIS Credentials
+      - name: 🌍 Credentials
         env:
-          # Use environment-specific secrets
           ARCGIS_USERNAME: ${{ env.ENVIRONMENT == 'production' && secrets.ARCGIS_USERNAME_PROD || secrets.ARCGIS_USERNAME_DEV }}
           ARCGIS_PASSWORD: ${{ env.ENVIRONMENT == 'production' && secrets.ARCGIS_PASSWORD_PROD || secrets.ARCGIS_PASSWORD_DEV }}
           ARCGIS_PORTAL_URL: ${{ env.ENVIRONMENT == 'production' && secrets.ARCGIS_PORTAL_URL_PROD || secrets.ARCGIS_PORTAL_URL_DEV }}
@@ -78,102 +72,37 @@ jobs:
           echo "ARCGIS_PASSWORD=${ARCGIS_PASSWORD}" >> $GITHUB_ENV
           echo "ARCGIS_PORTAL_URL=${ARCGIS_PORTAL_URL}" >> $GITHUB_ENV
       
-      - name: 📅 Load Previous Timestamp
+      - name: 📅 Load Timestamp
         if: env.PROCESSING_MODE == 'changed'
         run: |
-          echo "🔍 Loading previous timestamp for ${{ env.ENVIRONMENT }} environment..."
-          
-          # Configure git for potential branch operations
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # Try to get timestamp from workflow-state branch
           if git ls-remote --exit-code --heads origin workflow-state > /dev/null 2>&1; then
-            echo "📥 Found workflow-state branch, fetching..."
             git fetch origin workflow-state
-            
-            # Try to get the timestamp file for this environment
             TIMESTAMP_FILE="spatial_field_updater/.last_run_${{ env.ENVIRONMENT }}"
             if git cat-file -e origin/workflow-state:$TIMESTAMP_FILE 2>/dev/null; then
-              # Extract timestamp from the branch
               git show origin/workflow-state:$TIMESTAMP_FILE > $TIMESTAMP_FILE
-              TIMESTAMP=$(cat $TIMESTAMP_FILE)
-              echo "✅ Loaded previous timestamp: $TIMESTAMP"
-              echo "📊 Will process records modified since: $TIMESTAMP"
-            else
-              echo "ℹ️ No previous timestamp found for ${{ env.ENVIRONMENT }} environment"
-              echo "🔄 Will process all records (first run for this environment)"
+              echo "✅ Loaded timestamp: $(cat $TIMESTAMP_FILE)"
             fi
-          else
-            echo "ℹ️ No workflow-state branch found - first run of workflow"
-            echo "🔄 Will process all records"
           fi
       
-      - name: 🧪 Validate Configuration
-        run: |
-          echo "Running validation for environment: ${{ env.ENVIRONMENT }}"
-          python -c "
-          import json
-          import os
-
-          # Check if config file exists
-          config_path = 'spatial_field_updater/config/environment_config.json'
-          if not os.path.exists(config_path):
-              raise FileNotFoundError(f'Configuration file not found: {config_path}')
-
-          # Load and validate configuration
-          with open(config_path, 'r') as f:
-              config = json.load(f)
-
-          environment = os.environ['ENVIRONMENT']
-          if environment not in config:
-              raise ValueError(f'Environment \"{environment}\" not found in configuration. Available: {list(config.keys())}')
-
-          env_config = config[environment]
-          required_keys = ['weed_locations_layer_id', 'region_layer_id', 'district_layer_id']
-          
-          for key in required_keys:
-              if key not in env_config:
-                  raise ValueError(f'Missing required configuration key: {key} for environment {environment}')
-              if not env_config[key]:
-                  raise ValueError(f'Empty configuration value for key: {key} in environment {environment}')
-
-          print(f'✅ Configuration validation passed for environment: {environment}')
-          print(f'📍 Weed locations layer: {env_config[\"weed_locations_layer_id\"]}')
-          print(f'🌍 Regions layer: {env_config[\"region_layer_id\"]}')
-          print(f'🏛️ Districts layer: {env_config[\"district_layer_id\"]}')
-          "
-      
-      - name: 🎯 Run Spatial Field Update
+      - name: 🎯 Process
         id: spatial_update
         run: |
-          echo "🚀 Starting spatial field update for ${{ env.ENVIRONMENT }} environment..."
-          
           cd spatial_field_updater
           
-          # Build command arguments
           ARGS="--environment ${{ env.ENVIRONMENT }}"
+          [ "${{ env.PROCESSING_MODE }}" = "all" ] && ARGS="$ARGS --mode all"
+          [ -n "${{ env.SAMPLE_SIZE }}" ] && ARGS="$ARGS --sample-size ${{ env.SAMPLE_SIZE }}"
           
-          if [ "${{ env.PROCESSING_MODE }}" = "all" ]; then
-            ARGS="$ARGS --mode all"
-          fi
-          
-          if [ -n "${{ env.SAMPLE_SIZE }}" ]; then
-            ARGS="$ARGS --sample-size ${{ env.SAMPLE_SIZE }}"
-          fi
-          
-          echo "📋 Running: python spatial_field_updater.py $ARGS"
-          
-          # Capture output and statistics
           OUTPUT=$(python spatial_field_updater.py $ARGS 2>&1 | tee /dev/stderr)
           
-          # Extract statistics from output
           UPDATED_COUNT=$(echo "$OUTPUT" | grep -o "Applied [0-9]* updates" | grep -o "[0-9]*" || echo "0")
           UNASSIGNED_REGION=$(echo "$OUTPUT" | grep -o "[0-9]* points remain unassigned.*region" | grep -o "^[0-9]*" || echo "0")
           UNASSIGNED_DISTRICT=$(echo "$OUTPUT" | grep -o "[0-9]* points remain unassigned.*district" | grep -o "^[0-9]*" || echo "0")
           TOTAL_PROCESSED=$(echo "$OUTPUT" | grep -o "Processing [0-9]* weed locations" | grep -o "[0-9]*" || echo "0")
           
-          # Store in outputs and environment
           echo "success=true" >> $GITHUB_OUTPUT
           echo "updated_count=$UPDATED_COUNT" >> $GITHUB_OUTPUT
           echo "unassigned_region=$UNASSIGNED_REGION" >> $GITHUB_OUTPUT
@@ -184,108 +113,46 @@ jobs:
           echo "UNASSIGNED_REGION=$UNASSIGNED_REGION" >> $GITHUB_ENV
           echo "UNASSIGNED_DISTRICT=$UNASSIGNED_DISTRICT" >> $GITHUB_ENV
           echo "TOTAL_PROCESSED=$TOTAL_PROCESSED" >> $GITHUB_ENV
-          
-          echo "✅ Spatial field update completed successfully"
       
-      - name: 💾 Store Timestamp in State Branch
+      - name: 💾 Store Timestamp
         if: steps.spatial_update.outputs.success == 'true'
         run: |
-          echo "💾 Storing timestamp for ${{ env.ENVIRONMENT }} environment..."
-          
-          # Configure git
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # Get current timestamp (when the processing completed)
           TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S)
-          echo "📅 Current timestamp: $TIMESTAMP"
           
-          # Check if workflow-state branch exists
           if git ls-remote --exit-code --heads origin workflow-state > /dev/null 2>&1; then
-            echo "📥 Checking out existing workflow-state branch"
             git fetch origin workflow-state
             git checkout -b workflow-state origin/workflow-state
           else
-            echo "🆕 Creating new workflow-state branch"
             git checkout --orphan workflow-state
             git rm -rf . 2>/dev/null || true
-            
-            # Create initial README for the state branch
-            cat > README.md << 'EOF'
-          # Workflow State Branch
-          
-          This branch stores automated workflow timestamps and state files for the CAMS Spatial Field Updater.
-          
-          ## Contents
-          - `spatial_field_updater/.last_run_development` - Last successful run timestamp for development environment
-          - `spatial_field_updater/.last_run_production` - Last successful run timestamp for production environment
-          
-          ## Purpose
-          These timestamps enable incremental processing by tracking when each environment was last processed.
-          Only records modified since the last timestamp are processed on subsequent runs.
-          EOF
-            
+            echo "# Workflow State Branch" > README.md
             git add README.md
-            git commit -m "Initial workflow state branch setup"
+            git commit -m "Initial state branch"
           fi
           
-          # Create/update timestamp file
           mkdir -p spatial_field_updater
           echo "$TIMESTAMP" > spatial_field_updater/.last_run_${{ env.ENVIRONMENT }}
-          
-          # Commit and force push (avoids any merge conflicts)
           git add spatial_field_updater/.last_run_${{ env.ENVIRONMENT }}
-          git commit -m "chore: update ${{ env.ENVIRONMENT }} timestamp to $TIMESTAMP
-
-          - Workflow: ${{ github.workflow }}
-          - Run ID: ${{ github.run_id }}
-          - Event: ${{ github.event_name }}
-          - Processing Mode: ${{ env.PROCESSING_MODE }}
-          - Updated Records: ${{ env.UPDATED_COUNT }}
-          - Total Processed: ${{ env.TOTAL_PROCESSED }}"
-          
+          git commit -m "Update ${{ env.ENVIRONMENT }} timestamp: $TIMESTAMP"
           git push origin workflow-state --force
-          
-          echo "✅ Timestamp stored successfully in workflow-state branch"
       
-      - name: 📊 Generate Workflow Summary
+      - name: 📊 Summary
         if: always()
         run: |
-          echo "📊 Generating workflow summary..."
+          STATUS=${{ steps.spatial_update.outputs.success == 'true' && '✅ Success' || '❌ Failed' }}
           
-          # Determine status
-          if [ "${{ steps.spatial_update.outputs.success }}" = "true" ]; then
-            STATUS="✅ Success"
-            STATUS_COLOR="🟢"
-          else
-            STATUS="❌ Failed"
-            STATUS_COLOR="🔴"
-          fi
-          
-          # Create summary
           cat >> $GITHUB_STEP_SUMMARY << EOF
-          # 📍 CAMS Spatial Field Updater Results
+          # 📍 CAMS Spatial Field Updater
           
-          $STATUS_COLOR **Status**: $STATUS  
-          🌍 **Environment**: \`${{ env.ENVIRONMENT }}\`  
-          🔄 **Mode**: \`${{ env.PROCESSING_MODE }}\`  
-          📅 **Run Time**: $(date -u)  
-          
-          ## 📊 Processing Statistics
+          **Status**: $STATUS | **Environment**: ${{ env.ENVIRONMENT }} | **Mode**: ${{ env.PROCESSING_MODE }}
           
           | Metric | Count |
           |--------|--------|
-          | 📍 **Total Points Processed** | ${{ env.TOTAL_PROCESSED }} |
-          | ✏️ **Records Updated** | ${{ env.UPDATED_COUNT }} |
-          | ⚠️ **Unassigned (Region)** | ${{ env.UNASSIGNED_REGION }} |
-          | ⚠️ **Unassigned (District)** | ${{ env.UNASSIGNED_DISTRICT }} |
-          
-          ## 🔗 Quick Links
-          
-          - 📈 [View workflow run details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          - 🌿 [Workflow state branch](${{ github.server_url }}/${{ github.repository }}/tree/workflow-state)
-          - ⚙️ [Configuration file](${{ github.server_url }}/${{ github.repository }}/blob/main/spatial_field_updater/config/environment_config.json)
-          
+          | 📍 Total Processed | ${{ env.TOTAL_PROCESSED }} |
+          | ✏️ Records Updated | ${{ env.UPDATED_COUNT }} |
+          | ⚠️ Unassigned (Region) | ${{ env.UNASSIGNED_REGION }} |
+          | ⚠️ Unassigned (District) | ${{ env.UNASSIGNED_DISTRICT }} |
           EOF
-          
-          echo "✅ Workflow summary generated"
