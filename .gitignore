@@ -170,4 +170,5 @@ ehthumbs.db
 Desktop.ini
 
 # CAMS Utilities - Environment-specific timestamp files
-.last_run_* 
+# Legacy timestamp files (now using ArcGIS audit table)
+# .last_run_* 

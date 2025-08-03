@@ -375,6 +375,8 @@ def update_spatial_codes_geopandas(environment, process_all=True):
     
     if len(weed_features.features) == 0:
         print("No features to process")
+        # Still save timestamp - we ran and checked for changes
+        save_last_run_date(gis, environment)
         return
     
     # Convert to GeoPandas
