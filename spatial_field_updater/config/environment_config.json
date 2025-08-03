@@ -2,11 +2,13 @@
   "development": {
     "weed_locations_layer_id": "f1d9e7c7a95a4583bb3aa9918822db26",
     "region_layer_id": "7759fbaecd4649dea39c4ac2b07fc4ab",
-    "district_layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0"
+    "district_layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0",
+    "audit_table_id": "eb9b12249d794244ad82e54ad42dd58e"
   },
   "production": {
     "weed_locations_layer_id": "f529d7f1928b485d8fbf5b8a8de85799",
     "region_layer_id": "7759fbaecd4649dea39c4ac2b07fc4ab",
-    "district_layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0"
+    "district_layer_id": "c8f6ba6b968c4d31beddfb69abfe3df0",
+    "audit_table_id": "eb9b12249d794244ad82e54ad42dd58e"
   }
 }

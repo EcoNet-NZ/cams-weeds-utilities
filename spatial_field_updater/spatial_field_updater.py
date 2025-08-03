@@ -10,16 +10,12 @@ import argparse
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_fixed
 from arcgis.gis import GIS
-from arcgis.features import FeatureLayer
+from arcgis.features import FeatureLayer, Table
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
-# Configuration - timestamp files are environment-specific, stored in same directory as script
-def get_last_run_file(environment):
-    """Get environment-specific last run file path in the spatial_field_updater directory"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(script_dir, f".last_run_{environment}")
+# Configuration - timestamps now stored in ArcGIS audit table
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
 def connect_arcgis():
@@ -42,39 +38,86 @@ def get_layers(gis, environment):
     weed_layer_id = env_settings['weed_locations_layer_id']
     region_layer_id = env_settings['region_layer_id']
     district_layer_id = env_settings['district_layer_id']
+    audit_table_id = env_settings['audit_table_id']
     
     weed_layer = FeatureLayer.fromitem(gis.content.get(weed_layer_id))
     region_layer = FeatureLayer.fromitem(gis.content.get(region_layer_id))
     district_layer = FeatureLayer.fromitem(gis.content.get(district_layer_id))
+    audit_table = Table.fromitem(gis.content.get(audit_table_id))
     
-    return weed_layer, region_layer, district_layer
+    return weed_layer, region_layer, district_layer, audit_table
 
-def get_last_run_date(environment):
-    """Get the last run date from environment-specific file, return None if not found"""
-    last_run_file = get_last_run_file(environment)
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
+def get_last_run_date(gis, environment):
+    """Get the last run date from audit table, return None if not found"""
     try:
-        if os.path.exists(last_run_file):
-            with open(last_run_file, 'r') as f:
-                return datetime.fromisoformat(f.read().strip())
-    except Exception:
-        pass
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        env_config_path = os.path.join(script_dir, 'config', 'environment_config.json')
+        with open(env_config_path, 'r') as f:
+            env_config = json.load(f)
+        
+        audit_table_id = env_config[environment]['audit_table_id']
+        audit_table = Table.fromitem(gis.content.get(audit_table_id))
+        
+        # Query for this process and environment
+        where_clause = f"ProcessName = 'spatial_field_updater' AND Environment = '{environment}'"
+        result = audit_table.query(where=where_clause, return_all_records=False)
+        
+        if result.features:
+            timestamp_ms = result.features[0].attributes['LastRunTimestamp']
+            # ArcGIS DateTime fields return milliseconds since epoch
+            return datetime.fromtimestamp(timestamp_ms / 1000)
+    except Exception as e:
+        print(f"Warning: Could not get last run date from audit table: {e}")
     return None
 
-def save_last_run_date(environment):
-    """Save current datetime as last run date for the specified environment"""
-    last_run_file = get_last_run_file(environment)
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
+def save_last_run_date(gis, environment):
+    """Save current datetime as last run date for the specified environment in audit table"""
     try:
-        with open(last_run_file, 'w') as f:
-            f.write(datetime.now().isoformat())
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        env_config_path = os.path.join(script_dir, 'config', 'environment_config.json')
+        with open(env_config_path, 'r') as f:
+            env_config = json.load(f)
+        
+        audit_table_id = env_config[environment]['audit_table_id']
+        audit_table = Table.fromitem(gis.content.get(audit_table_id))
+        
+        # Check if record exists
+        where_clause = f"ProcessName = 'spatial_field_updater' AND Environment = '{environment}'"
+        existing = audit_table.query(where=where_clause, return_all_records=False)
+        
+        timestamp = datetime.now().isoformat()
+        
+        if existing.features:
+            # Update existing record
+            objectid = existing.features[0].attributes['OBJECTID']
+            audit_table.edit_features(updates=[{
+                'attributes': {
+                    'OBJECTID': objectid,
+                    'LastRunTimestamp': timestamp
+                }
+            }])
+            print(f"Updated last run timestamp for {environment} environment")
+        else:
+            # Insert new record
+            audit_table.edit_features(adds=[{
+                'attributes': {
+                    'ProcessName': 'spatial_field_updater',
+                    'Environment': environment,
+                    'LastRunTimestamp': timestamp
+                }
+            }])
+            print(f"Created new audit record for {environment} environment")
     except Exception as e:
-        print(f"Warning: Could not save last run date for {environment}: {e}")
+        print(f"Warning: Could not save last run date to audit table for {environment}: {e}")
 
-def build_where_clause(environment, process_all):
+def build_where_clause(gis, environment, process_all):
     """Build WHERE clause for querying features"""
     if process_all:
         return "1=1"  # All features
     
-    last_run = get_last_run_date(environment)
+    last_run = get_last_run_date(gis, environment)
     if not last_run:
         print("No previous run found, processing all features")
         return "1=1"
@@ -314,10 +357,10 @@ def update_spatial_codes_geopandas(environment, process_all=True):
     print(f"Starting GeoPandas spatial update on '{environment}' ({'all features' if process_all else 'changed features only'})...")
     
     gis = connect_arcgis()
-    weed_layer, region_layer, district_layer = get_layers(gis, environment)
+    weed_layer, region_layer, district_layer, audit_table = get_layers(gis, environment)
     
     # Build query to get features
-    where_clause = build_where_clause(environment, process_all)
+    where_clause = build_where_clause(gis, environment, process_all)
     print(f"Query: {where_clause}")
     
     # Get weed locations
@@ -375,7 +418,7 @@ def update_spatial_codes_geopandas(environment, process_all=True):
     
     if len(updates) == 0:
         print("No updates needed")
-        save_last_run_date(environment)
+        save_last_run_date(gis, environment)
         return
     
     # Apply updates in batches
@@ -396,7 +439,7 @@ def update_spatial_codes_geopandas(environment, process_all=True):
     
     # Save last run date only if processing was successful
     if total_updated > 0 or len(updates) == 0:
-        save_last_run_date(environment)
+        save_last_run_date(gis, environment)
 
 def main():
     parser = argparse.ArgumentParser(description="Update spatial codes using GeoPandas (FAST!)")

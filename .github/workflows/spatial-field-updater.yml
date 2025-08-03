@@ -57,7 +57,7 @@ jobs:
       
       - name: 🔧 Configure
         run: |
-          ENV=${{ github.event_name == 'schedule' && 'development' || github.event.inputs.environment }}
+          ENV=${{ github.event_name == 'schedule' && 'production' || github.event.inputs.environment }}
           echo "ENVIRONMENT=$ENV" >> $GITHUB_ENV
           echo "PROCESSING_MODE=${{ github.event.inputs.processing_mode || 'changed' }}" >> $GITHUB_ENV
           echo "SAMPLE_SIZE=${{ github.event.inputs.sample_size || '' }}" >> $GITHUB_ENV

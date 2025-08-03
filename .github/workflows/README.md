@@ -8,7 +8,7 @@ The `spatial-field-updater.yml` workflow provides automated daily processing of 
 
 ### 🎯 Features
 
-- **🕰️ Scheduled Runs**: Daily execution at 6 AM UTC (7-8 PM NZ time) on development environment
+- **🕰️ Scheduled Runs**: Daily execution at 6 AM UTC (7-8 PM NZ time) on production environment
 - **⚡ Manual Triggers**: On-demand execution with configurable options
 - **🌍 Environment Selection**: Choose development or production environment
 - **📊 Processing Modes**: Changed records (incremental) or full dataset processing
@@ -39,7 +39,7 @@ Ensure your `spatial_field_updater/config/environment_config.json` contains the 
 ### 🚀 Usage
 
 #### Scheduled Execution
-The workflow runs automatically daily at 6 AM UTC on the `development` environment using the `changed` mode (incremental processing).
+The workflow runs automatically daily at 6 AM UTC (7-8 PM NZ time) on the `production` environment using the `changed` mode (incremental processing).
 
 #### Manual Execution
 Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
@@ -136,7 +136,7 @@ The workflow has a 30-minute timeout for streamlined execution.
 ```mermaid
 graph TD
     A[GitHub Actions Trigger] --> B{Event Type}
-    B -->|Schedule| C[Development Environment]
+    B -->|Schedule| C[Production Environment]
     B -->|Manual| D[Selected Environment]
     
     C --> E[Single Spatial Update Job]

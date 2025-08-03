@@ -90,7 +90,7 @@ python field_maps_webmap_lister/field_maps_webmap_lister.py
 The spatial field updater includes a comprehensive GitHub Actions workflow for automated daily processing.
 
 **Features**:
-- 🕰️ **Scheduled Daily Runs**: Automatic execution at 6 AM UTC (7-8 PM NZ time) on development environment
+- 🕰️ **Scheduled Daily Runs**: Automatic execution at 6 AM UTC (7-8 PM NZ time) on production environment
 - ⚡ **Manual Triggers**: On-demand execution with configurable options for any environment
 - 🌍 **Environment Selection**: Choose development or production environment
 - 📊 **Processing Modes**: Incremental (changed records) or full dataset
