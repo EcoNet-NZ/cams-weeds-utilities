@@ -13,7 +13,7 @@ The `spatial-field-updater.yml` workflow provides automated daily processing of 
 - **🌍 Environment Selection**: Choose development or production environment
 - **📊 Processing Modes**: Changed records (incremental) or full dataset processing
 - **📈 Workflow Summary**: Real-time statistics showing updated and unassigned points
-- **💾 Conflict-Free State**: Timestamps stored in dedicated branch to avoid merge conflicts
+- **💾 Audit Table Storage**: Timestamps stored in ArcGIS audit table for reliable state management
 - **⚡ Streamlined**: Simplified single-job execution with minimal overhead
 
 ### 🔧 Setup Instructions
@@ -55,19 +55,16 @@ Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
 
 1. **🏗️ Setup**: Checkout code, install Python, install dependencies
 2. **🔧 Configure**: Set environment variables and credentials
-3. **📅 Load Timestamp**: Retrieve last run timestamp (incremental mode only)
-4. **🎯 Process**: Run the spatial field updater script
-5. **💾 Store Timestamp**: Save new timestamp (on success)
-6. **📊 Summary**: Generate processing statistics
+3. **🎯 Process**: Run the spatial field updater script (handles timestamp management internally)
+4. **📊 Summary**: Generate processing statistics
 
 ### 💾 State Storage
 
 **Timestamp Storage** (permanent):
-- **Workflow State Branch**: Timestamps stored in dedicated `workflow-state` branch
-- **Per-Environment**: Separate timestamps for development and production
-- **Conflict-Free**: Eliminates merge conflicts with main development branch
-
-Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-state).
+- **ArcGIS Audit Table**: Timestamps stored in "CAMS Process Audit" table
+- **Per-Environment**: Separate records for development and production environments
+- **Process-Specific**: Supports multiple CAMS utilities sharing the same audit table
+- **Reliable**: Direct integration with ArcGIS platform eliminates external dependencies
 
 ### 🔍 Monitoring
 
@@ -75,7 +72,7 @@ Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-stat
 - ✅ All steps complete without errors
 - ✅ Spatial assignments updated successfully
 - ✅ Workflow summary generated with statistics
-- ✅ Timestamp stored in workflow-state branch
+- ✅ Timestamp stored in ArcGIS audit table
 
 #### Failure Scenarios
 - ❌ Authentication failures (check secrets)
@@ -99,14 +96,14 @@ Timestamps can be viewed in the [workflow-state branch](../../tree/workflow-stat
 - Use `mode: all` to force processing all records
 
 **"Processing all records unexpectedly"**
-- Check if workflow-state branch exists and contains timestamp files
-- Verify timestamps are being loaded correctly in the "Load Previous Timestamp" step
-- Manual runs default to processing all records unless timestamp exists
+- Check if audit table contains timestamp records for the environment
+- Verify script can access the ArcGIS audit table (table ID: eb9b12249d794244ad82e54ad42dd58e)
+- First run on an environment will process all records and create initial audit record
 
 **Timestamp/State Issues**
-- Timestamps are stored in the `workflow-state` branch (separate from main)
-- Force pushes to workflow-state branch prevent merge conflicts
-- First run creates the workflow-state branch automatically
+- Timestamps are stored in the "CAMS Process Audit" ArcGIS table
+- Each environment (dev/prod) maintains separate audit records
+- ProcessName field identifies the specific utility ("spatial_field_updater")
 
 #### Debugging Steps
 
@@ -142,10 +139,8 @@ graph TD
     C --> E[Single Spatial Update Job]
     D --> E
     
-    E --> F[Load Timestamp]
-    F --> G[Spatial Processing]
-    G --> H[Store Timestamp]
-    H --> I[Workflow Summary]
+    E --> F[Spatial Processing]
+    F --> G[Workflow Summary]
 ```
 
 This simplified workflow provides reliable, automated spatial field updates with streamlined execution and comprehensive statistics.

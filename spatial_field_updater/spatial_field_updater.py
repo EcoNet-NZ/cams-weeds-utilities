@@ -418,28 +418,26 @@ def update_spatial_codes_geopandas(environment, process_all=True):
     
     if len(updates) == 0:
         print("No updates needed")
-        save_last_run_date(gis, environment)
-        return
-    
-    # Apply updates in batches
-    batch_size = 100
-    total_updated = 0
-    
-    for i in range(0, len(updates), batch_size):
-        batch = updates[i:i + batch_size]
+    else:
+        # Apply updates in batches
+        batch_size = 100
+        total_updated = 0
         
-        try:
-            successful = update_batch(weed_layer, batch)
-            total_updated += successful
-            print(f"Updated batch {i//batch_size + 1}: {successful}/{len(batch)} successful")
-        except Exception as e:
-            print(f"Batch update failed after retries: {e}")
+        for i in range(0, len(updates), batch_size):
+            batch = updates[i:i + batch_size]
+            
+            try:
+                successful = update_batch(weed_layer, batch)
+                total_updated += successful
+                print(f"Updated batch {i//batch_size + 1}: {successful}/{len(batch)} successful")
+            except Exception as e:
+                print(f"Batch update failed after retries: {e}")
+        
+        print(f"Completed: {total_updated} features updated successfully")
     
-    print(f"Completed: {total_updated} features updated successfully")
-    
-    # Save last run date only if processing was successful
-    if total_updated > 0 or len(updates) == 0:
-        save_last_run_date(gis, environment)
+    # Always save timestamp when process completes successfully
+    # (represents "when we last checked" not "when we last changed")
+    save_last_run_date(gis, environment)
 
 def main():
     parser = argparse.ArgumentParser(description="Update spatial codes using GeoPandas (FAST!)")

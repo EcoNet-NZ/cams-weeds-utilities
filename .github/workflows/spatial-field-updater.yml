@@ -72,21 +72,7 @@ jobs:
           echo "ARCGIS_PASSWORD=${ARCGIS_PASSWORD}" >> $GITHUB_ENV
           echo "ARCGIS_PORTAL_URL=${ARCGIS_PORTAL_URL}" >> $GITHUB_ENV
       
-      - name: 📅 Load Timestamp
-        if: env.PROCESSING_MODE == 'changed'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          if git ls-remote --exit-code --heads origin workflow-state > /dev/null 2>&1; then
-            git fetch origin workflow-state
-            TIMESTAMP_FILE="spatial_field_updater/.last_run_${{ env.ENVIRONMENT }}"
-            if git cat-file -e origin/workflow-state:$TIMESTAMP_FILE 2>/dev/null; then
-              git show origin/workflow-state:$TIMESTAMP_FILE > $TIMESTAMP_FILE
-              echo "✅ Loaded timestamp: $(cat $TIMESTAMP_FILE)"
-            fi
-          fi
-      
+
       - name: 🎯 Process
         id: spatial_update
         run: |
@@ -114,31 +100,7 @@ jobs:
           echo "UNASSIGNED_DISTRICT=$UNASSIGNED_DISTRICT" >> $GITHUB_ENV
           echo "TOTAL_PROCESSED=$TOTAL_PROCESSED" >> $GITHUB_ENV
       
-      - name: 💾 Store Timestamp
-        if: steps.spatial_update.outputs.success == 'true'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S)
-          
-          if git ls-remote --exit-code --heads origin workflow-state > /dev/null 2>&1; then
-            git fetch origin workflow-state
-            git checkout -b workflow-state origin/workflow-state
-          else
-            git checkout --orphan workflow-state
-            git rm -rf . 2>/dev/null || true
-            echo "# Workflow State Branch" > README.md
-            git add README.md
-            git commit -m "Initial state branch"
-          fi
-          
-          mkdir -p spatial_field_updater
-          echo "$TIMESTAMP" > spatial_field_updater/.last_run_${{ env.ENVIRONMENT }}
-          git add spatial_field_updater/.last_run_${{ env.ENVIRONMENT }}
-          git commit -m "Update ${{ env.ENVIRONMENT }} timestamp: $TIMESTAMP"
-          git push origin workflow-state --force
-      
+
       - name: 📊 Summary
         if: always()
         run: |

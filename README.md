@@ -95,7 +95,7 @@ The spatial field updater includes a comprehensive GitHub Actions workflow for a
 - 🌍 **Environment Selection**: Choose development or production environment
 - 📊 **Processing Modes**: Incremental (changed records) or full dataset
 - 📈 **Workflow Summary**: Real-time statistics showing updated and unassigned points
-- 💾 **Conflict-Free State**: Timestamps stored in dedicated branch to avoid merge conflicts
+- 💾 **Audit Table Storage**: Timestamps stored in ArcGIS audit table for reliable state management
 - ⚡ **Streamlined**: Simplified single-job execution with minimal overhead
 
 **Quick Setup**:

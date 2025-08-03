@@ -90,18 +90,18 @@ The script reads layer IDs from `spatial_field_updater/config/environment_config
 
 ### Change Detection Logic
 
-#### File-based Tracking
-- Last run timestamp stored in environment-specific files: `.last_run_{environment}` (spatial_field_updater directory)
+#### ArcGIS Audit Table Tracking
+- Last run timestamp stored in "CAMS Process Audit" ArcGIS table
 - Uses `EditDate_1 > last_run_timestamp` for incremental processing
 - Falls back to processing all features if no previous run found
-- Each environment (development, production) tracks timestamps independently
-- Example files: `spatial_field_updater/.last_run_development`, `spatial_field_updater/.last_run_production`
+- Each environment (development, production) tracks timestamps independently using Environment field
+- ProcessName field identifies this specific utility ("spatial_field_updater")
 
 #### GitHub Workflow Integration
-- **Automated Runs**: Timestamps stored in dedicated `workflow-state` branch
-- **Conflict-Free**: Eliminates merge conflicts with main development branch
-- **Persistent**: Timestamps persist indefinitely in git history
-- **Per-Environment**: Separate tracking for development and production workflows
+- **Automated Runs**: Timestamps managed directly by the script via ArcGIS audit table
+- **Reliable**: No external dependencies or git branch management required
+- **Persistent**: Timestamps stored permanently in ArcGIS platform
+- **Per-Environment**: Separate records for development and production workflows
 
 #### Smart Updates
 - Only updates features where RegionCode or DistrictCode actually changed
