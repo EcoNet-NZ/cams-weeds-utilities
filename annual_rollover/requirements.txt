@@ -1,0 +1,6 @@
+# Annual Rollover Tool Dependencies
+# Inherits from parent requirements.txt
+
+# Additional dependencies for annual rollover
+python-dateutil>=2.8.0  # For relativedelta (calendar date arithmetic)
+openpyxl>=3.0.0         # For Excel export

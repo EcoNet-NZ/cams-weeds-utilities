@@ -171,4 +171,7 @@ Desktop.ini
 
 # CAMS Utilities - Environment-specific timestamp files
 # Legacy timestamp files (now using ArcGIS audit table)
-# .last_run_* 
+# .last_run_*
+
+# Annual rollover Excel exports
+*/*annual_rollover*.xlsx
