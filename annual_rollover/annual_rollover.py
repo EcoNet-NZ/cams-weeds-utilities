@@ -44,6 +44,7 @@ def connect_arcgis():
     username = os.getenv('ARCGIS_USERNAME')
     password = os.getenv('ARCGIS_PASSWORD')
     portal_url = os.getenv('ARCGIS_PORTAL_URL', 'https://www.arcgis.com')
+    print(f"Connecting to ArcGIS Online with username: {username} and portal_url: {portal_url}")
     return GIS(portal_url, username, password)
 
 
@@ -71,22 +72,31 @@ def get_layers_and_table(gis, environment):
 
 def validate_backup_field(weed_layer, dry_run=False):
     """
-    Validate that the StatusAt202510 backup field exists in the layer
+    Validate that the StatusAt202510 backup field exists and has the correct domain
+    
+    This field will be populated with current ParentStatusWithDomain values for ALL records
+    before any rollover updates are made, creating a snapshot of the status at October 2025.
     
     Args:
         weed_layer: ArcGIS FeatureLayer
         dry_run: If True, only warn about missing field; if False, raise error
         
     Raises:
-        ValueError: If backup field is missing and not in dry run mode
+        ValueError: If backup field is missing, has no domain, or domain doesn't match
     """
     backup_field_name = 'StatusAt202510'
-    field_names = [field.name for field in weed_layer.properties.fields]
+    parent_field_name = 'ParentStatusWithDomain'
     
+    # Get all fields
+    fields = {field.name: field for field in weed_layer.properties.fields}
+    field_names = list(fields.keys())
+    
+    # Check if backup field exists
     if backup_field_name not in field_names:
         error_msg = (
             f"❌ CRITICAL ERROR: Backup field '{backup_field_name}' not found in layer.\n"
-            f"   This field is required to preserve original status values before rollover.\n"
+            f"   This field is required to preserve ALL current status values before rollover.\n"
+            f"   The field will be populated with ParentStatusWithDomain values for every record.\n"
             f"   Please create this field in the ArcGIS layer before running the rollover.\n"
             f"   Available fields: {', '.join(sorted(field_names))}"
         )
@@ -98,7 +108,74 @@ def validate_backup_field(weed_layer, dry_run=False):
         else:
             raise ValueError(error_msg)
     
-    print(f"✅ Backup field '{backup_field_name}' found in layer")
+    # Check if backup field has a domain
+    backup_field = fields[backup_field_name]
+    parent_field = fields[parent_field_name]
+    
+    backup_domain = getattr(backup_field, 'domain', None)
+    parent_domain = getattr(parent_field, 'domain', None)
+    
+    if not backup_domain:
+        error_msg = (
+            f"❌ CRITICAL ERROR: Backup field '{backup_field_name}' has no domain.\n"
+            f"   This field must have the same domain as '{parent_field_name}' to store display values.\n"
+            f"   Please configure the domain for this field in ArcGIS."
+        )
+        
+        if dry_run:
+            print(f"⚠️  WARNING: {error_msg}")
+            print("   Continuing in DRY RUN mode, but live updates will fail without domain.")
+            return False
+        else:
+            raise ValueError(error_msg)
+    
+    # Check if domain values match (if both have domains)
+    if parent_domain and backup_domain:
+        # Get domain values for comparison
+        parent_values = set()
+        backup_values = set()
+        
+        # Extract coded values from parent domain
+        if hasattr(parent_domain, 'codedValues') and parent_domain.codedValues:
+            for coded_value in parent_domain.codedValues:
+                if hasattr(coded_value, 'code'):
+                    parent_values.add(coded_value.code)
+        
+        # Extract coded values from backup domain  
+        if hasattr(backup_domain, 'codedValues') and backup_domain.codedValues:
+            for coded_value in backup_domain.codedValues:
+                if hasattr(coded_value, 'code'):
+                    backup_values.add(coded_value.code)
+        
+        # Compare domain values
+        if parent_values != backup_values:
+            missing_in_backup = parent_values - backup_values
+            extra_in_backup = backup_values - parent_values
+            
+            error_msg = (
+                f"❌ CRITICAL ERROR: Domain values mismatch between fields.\n"
+                f"   '{parent_field_name}' and '{backup_field_name}' must have identical domain values.\n"
+            )
+            
+            if missing_in_backup:
+                error_msg += f"   Missing in backup domain: {', '.join(sorted(missing_in_backup))}\n"
+            if extra_in_backup:
+                error_msg += f"   Extra in backup domain: {', '.join(sorted(extra_in_backup))}\n"
+                
+            error_msg += f"   Please ensure both fields use domains with identical coded values."
+            
+            if dry_run:
+                print(f"⚠️  WARNING: {error_msg}")
+                print("   Continuing in DRY RUN mode, but live updates may have inconsistent values.")
+                return False
+            else:
+                raise ValueError(error_msg)
+        
+        print(f"✅ Domain values match between '{parent_field_name}' and '{backup_field_name}' ({len(parent_values)} values)")
+    else:
+        print(f"✅ Backup field '{backup_field_name}' found (domain validation skipped)")
+    
+    print(f"✅ Backup field '{backup_field_name}' found with correct domain")
     return True
 
 
@@ -351,6 +428,110 @@ def update_batch(weed_layer, updates):
         raise
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
+def backup_all_statuses(weed_layer, dry_run=False):
+    """
+    Backup all ParentStatusWithDomain values to StatusAt202510 field
+    
+    This creates a snapshot of all current status values before any rollover updates.
+    
+    Args:
+        weed_layer: ArcGIS FeatureLayer
+        dry_run: If True, preview changes without updating
+    
+    Returns:
+        int: Number of records backed up (or would be backed up in dry_run)
+    """
+    print("📋 Backing up all current status values to StatusAt202510...")
+    
+    # Query all records with non-null ParentStatusWithDomain
+    # This will overwrite any existing StatusAt202510 values to ensure current snapshot
+    where_clause = "ParentStatusWithDomain IS NOT NULL"
+    
+    try:
+        # Get count first
+        count_result = weed_layer.query(where=where_clause, return_count_only=True)
+        total_to_backup = count_result
+        print(f"   Found {total_to_backup} records for status backup")
+        
+        if total_to_backup == 0:
+            print("   ✅ No records found with ParentStatusWithDomain values")
+            return 0
+        
+        if dry_run:
+            print(f"   🔍 DRY RUN - Would backup {total_to_backup} status values")
+            return total_to_backup
+        
+        # Process in batches to handle large datasets
+        all_features = []
+        offset = 0
+        page_size = 500  # Reasonable batch size for backup operation
+        
+        while True:
+            try:
+                page_features = weed_layer.query(
+                    where=where_clause,
+                    out_fields=['OBJECTID', 'ParentStatusWithDomain'],
+                    return_geometry=False,
+                    result_offset=offset,
+                    result_record_count=page_size
+                )
+                
+                if not page_features.features:
+                    break
+                    
+                all_features.extend(page_features.features)
+                offset += len(page_features.features)
+                
+                if len(all_features) % 2000 == 0:
+                    print(f"   Loaded {len(all_features)} records for backup...")
+                    
+            except Exception as page_error:
+                print(f"   Error loading records at offset {offset}: {page_error}")
+                break
+        
+        if not all_features:
+            print("   No records found to backup")
+            return 0
+        
+        # Prepare backup updates
+        backup_updates = []
+        for feature in all_features:
+            record = feature.attributes
+            current_status = record.get('ParentStatusWithDomain')
+            
+            if current_status:  # Only backup if there's a value
+                backup_updates.append({
+                    'attributes': {
+                        'OBJECTID': record['OBJECTID'],
+                        'StatusAt202510': current_status
+                    }
+                })
+        
+        print(f"   Preparing to backup {len(backup_updates)} status values...")
+        
+        # Apply backup updates in batches
+        batch_size = 500  # Increased from 100 for better performance
+        total_backed_up = 0
+        
+        for i in range(0, len(backup_updates), batch_size):
+            batch = backup_updates[i:i + batch_size]
+            
+            try:
+                successful = update_batch(weed_layer, batch)
+                total_backed_up += successful
+                print(f"   Backup batch {i//batch_size + 1}: {successful}/{len(batch)} successful")
+            except Exception as e:
+                print(f"   Backup batch {i//batch_size + 1} failed: {e}")
+        
+        print(f"   ✅ Backed up {total_backed_up}/{len(backup_updates)} status values")
+        return total_backed_up
+        
+    except Exception as e:
+        print(f"   ❌ Status backup failed: {e}")
+        raise
+
+
 def export_to_excel(updated_records, environment):
     """
     Export updated records to Excel file
@@ -441,6 +622,21 @@ def process_annual_rollover(environment, dry_run=False, limit=None):
     # Validate backup field exists
     backup_field_exists = validate_backup_field(weed_layer, dry_run)
     
+    # Backup all current status values to StatusAt202510 before making any changes
+    if backup_field_exists:
+        try:
+            backed_up_count = backup_all_statuses(weed_layer, dry_run)
+            print(f"✅ Status backup completed: {backed_up_count} records processed")
+        except Exception as e:
+            print(f"❌ Status backup failed: {e}")
+            if not dry_run:
+                print("   Aborting rollover to prevent data loss")
+                raise
+            else:
+                print("   Continuing in DRY RUN mode")
+    else:
+        print("⚠️  Skipping status backup - backup field not available")
+    
     # Query all records with target species and status
     print("🔍 Querying weed locations...")
     
@@ -465,16 +661,17 @@ def process_annual_rollover(environment, dry_run=False, limit=None):
                 result_record_count=limit
             )
         else:
-            # For full dataset, use pagination with retry logic
+            # For full dataset, use smaller chunks with more aggressive retry
             print("Using pagination for large dataset...")
             all_features = []
             offset = 0
-            page_size = 500  # Smaller chunks to avoid timeouts
-            max_retries = 3
+            page_size = 200  # Much smaller chunks to avoid service limits
+            max_retries = 5
             
             while True:
                 retry_count = 0
                 page_loaded = False
+                current_page_size = page_size
                 
                 while retry_count < max_retries and not page_loaded:
                     try:
@@ -483,7 +680,7 @@ def process_annual_rollover(environment, dry_run=False, limit=None):
                             out_fields='*',
                             return_geometry=False,
                             result_offset=offset,
-                            result_record_count=page_size
+                            result_record_count=current_page_size
                         )
                         page_loaded = True
                         
@@ -491,23 +688,30 @@ def process_annual_rollover(environment, dry_run=False, limit=None):
                             break
                             
                         all_features.extend(page_features.features)
-                        offset += page_size
-                        print(f"   Loaded {len(all_features)} records so far...")
+                        offset += len(page_features.features)  # Use actual returned count
+                        
+                        if len(all_features) % 1000 == 0 or len(page_features.features) < current_page_size:
+                            print(f"   Loaded {len(all_features)} records so far...")
                         
                     except Exception as page_error:
                         retry_count += 1
                         if "Expecting value" in str(page_error) and retry_count < max_retries:
-                            print(f"   Page failed (attempt {retry_count}/{max_retries}), retrying...")
+                            # Reduce page size on retry
+                            current_page_size = max(50, current_page_size // 2)
+                            print(f"   Page failed (attempt {retry_count}/{max_retries}), retrying with {current_page_size} records...")
                             import time
-                            time.sleep(2)  # Brief pause before retry
+                            time.sleep(retry_count * 2)  # Increasing delays
                         else:
-                            raise page_error
+                            print(f"   Failed after {max_retries} attempts. Stopping at {len(all_features)} records.")
+                            print(f"   This may be an ArcGIS service limitation. Consider using --limit for testing.")
+                            break
                 
                 if not page_loaded:
-                    raise Exception(f"Failed to load page after {max_retries} attempts")
+                    print(f"   Stopping pagination at {len(all_features)} records due to service limits.")
+                    break
                 
                 # Break if no more features
-                if not page_features.features:
+                if not page_features.features or len(page_features.features) == 0:
                     break
                 
                 # Safety check to prevent infinite loops
@@ -572,12 +776,7 @@ def process_annual_rollover(environment, dry_run=False, limit=None):
                 }
             }
             
-            # Add backup field (validated to exist during startup)
-            if backup_field_exists:
-                update_dict['attributes']['StatusAt202510'] = original_status
-            # else:
-            #     # This should not happen due to validation, but safety check
-            #     print(f"⚠️  WARNING: Skipping backup for OBJECTID {record['OBJECTID']} - backup field not available")
+            # Note: StatusAt202510 backup is now handled upfront for all records
             
             updates.append(update_dict)
             

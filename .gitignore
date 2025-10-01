@@ -174,4 +174,5 @@ Desktop.ini
 # .last_run_*
 
 # Annual rollover Excel exports
-*/*annual_rollover*.xlsx
+annual_rollover*.xlsx
+~$annual_rollover*.xlsx

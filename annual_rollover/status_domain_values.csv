@@ -1,0 +1,9 @@
+Label, Code
+Red - growth is occurring; please kill it, RedGrowth
+Purple - please check, PurpleHistoric
+Orange - dead-headed, OrangeDeadHeaded
+Pink - occupant/owner will manage, PinkOccupantWillKillGrowth
+Yellow - growth has been killed this year, YellowKilledThisYear
+Green - regrowth has not occurred this year, GreenNoRegrowthThisYear
+Gray - duplicate instance, GrayDuplicate
+Black - no growth expected, BlackNoGrowthExpected
