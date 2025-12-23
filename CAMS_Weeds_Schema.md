@@ -206,7 +206,7 @@ The Visits_Table is a related table that stores individual visit records for eac
 | Display Name | Field Name | Type | Length | Nullable | Generation | Source | Constraints | Notes |
 |-------------|------------|------|--------|----------|------------|--------|-------------|--------|
 | (1.1) ZZZ Visit Mode | `VisitMode` | String | 50 | Yes | User | CAMS form | Domain values | Visit mode type |
-| (1a) Date of Visit | `DateCheck` | Date | - | Yes | User | CAMS form, iNat to CAMS, EasyEditor | - | **KEY FIELD** - actual visit date |
+| (1a) Date of Visit | `DateCheck` | Date | - | Yes | User | CAMS form, iNat to CAMS, EasyEditor | - | **KEY FIELD** - actual visit date, MANDATORY from v0.8 onwards. If blank, to be populated with `CreationDate_1` otherwise if `CreationDate_1` is after 2025-09-10, or left blank otherwise |
 | (1a) Date of Visit - User Specified | `DateCheckUserSpecified` | Date | - | Yes | User | CAMS form | - | User can override auto date |
 | (1b) Visit Status (REQUIRED) | `WeedVisitStatus` | String | 100 | No | User | CAMS form, iNat to CAMS, EasyEditor | Domain values | Required, controlled vocabulary |
 | (1b.2) Visit Status Prompt | `VisitStatusPrompt` | String | 100 | Yes | User | CAMS form | Domain values | Status selection helper |
@@ -304,6 +304,35 @@ The Visits_Table is a related table that stores individual visit records for eac
 | (8c was 9.4) Date_Editor_Audit#1 (CHILD) | `Editor_SaveLast` | String | 255 | Yes | System | ? | - | Audit trail #1 |
 | (8.6) XXX-SendEmail | `SendEmail` | String | 50 | Yes | User | ? | - | Email notification flag |
 | XXX 9.9 Test new integer | `XXXTestNewInteger` | Integer | - | Yes | Test | ? | - | **TEST FIELD** |
+
+---
+
+### CAMS Weeds Schema Rules
+
+Assuming the child-parent updater and iNat synchroniser have run for the latest updates, the following fields in `WeedLocations` should be equivalent to field the latest row of the `Visits_Table` (ie the `Visits_Table` row with latest `DateCheck` datetime where `Visits_Table.GUID_Visits` = `WeedLocations.GlobalID`.
+
+| WeedLocations field | Visits_Table field |
+| `Urgency` | `DifficultyChild` |
+| `ParentStatusWithDomain` | `WeedVisitStatus` | 
+| `DateVisitMadeFromLastVisit` | `DateCheck` | 
+| `DateForNextVisitFromLastVisit` | `DateForReturnVisit` | 
+| `LatestVisitStage` | `VisitStage` | 
+| `LatestArea` | `Area` | 
+| `DateOfLastCreateFromLastVisit` | `CreationDate_1` | 
+| `DateOfLastEditFromLastVisit` | `EditDate_1` | 
+
+Exceptions:
+
+1. These values will not be replicated where there are no matching `Visits_Table` rows.
+
+
+| (5.1) Estimated effort (From Last Visit) | `Urgency` | Integer | - | Yes | System | Child-to-parent updater, EasyEditor | 1-5 scale | Formerly "Difficulty" |
+| (5.2) Date Visit Made (From Last Visit) | `DateVisitMadeFromLastVisit` | Date | - | Yes | System | Child-to-parent updater, EasyEditor | - | **KEY FIELD** - synced from visits |
+| (5.3) Date For Next Visit (From Last Visit) | `DateForNextVisitFromLastVisit` | Date | - | Yes | System | Child-to-parent updater, EasyEditor | - | Synced from visits |
+| (5.4) Latest Visit Step (From Last Visit) | `LatestVisitStage` | String | 100 | Yes | System | Child-to-parent updater | Domain values | Synced from visits |
+| (5.5) Latest Area M2 (From Last Visit) | `LatestArea` | Double | - | Yes | System | Child-to-parent updater, EasyEditor | >= 0 | Synced from visits |
+| (5.6) Date Of Last Create (From Last Visit) | `DateOfLastCreateFromLastVisit` | Date | - | Yes | System | Child-to-parent updater | - | Visit creation timestamp |
+| (5.7) Date Of Last Edit (From Last Visit) | `DateOfLastEditFromLastVisit` | Date | - | Yes | System | Child-to-parent updater | - | Visit edit timestamp |
 
 ---
 
