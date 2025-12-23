@@ -312,6 +312,7 @@ The Visits_Table is a related table that stores individual visit records for eac
 Assuming the child-parent updater and iNat synchroniser have run for the latest updates, the following fields in `WeedLocations` should be equivalent to field the latest row of the `Visits_Table` (ie the `Visits_Table` row with latest `DateCheck` datetime where `Visits_Table.GUID_Visits` = `WeedLocations.GlobalID`.
 
 | WeedLocations field | Visits_Table field |
+| ------------------- | ------------------ |
 | `Urgency` | `DifficultyChild` |
 | `ParentStatusWithDomain` | `WeedVisitStatus` | 
 | `DateVisitMadeFromLastVisit` | `DateCheck` | 
@@ -324,15 +325,6 @@ Assuming the child-parent updater and iNat synchroniser have run for the latest 
 Exceptions:
 
 1. These values will not be replicated where there are no matching `Visits_Table` rows.
-
-
-| (5.1) Estimated effort (From Last Visit) | `Urgency` | Integer | - | Yes | System | Child-to-parent updater, EasyEditor | 1-5 scale | Formerly "Difficulty" |
-| (5.2) Date Visit Made (From Last Visit) | `DateVisitMadeFromLastVisit` | Date | - | Yes | System | Child-to-parent updater, EasyEditor | - | **KEY FIELD** - synced from visits |
-| (5.3) Date For Next Visit (From Last Visit) | `DateForNextVisitFromLastVisit` | Date | - | Yes | System | Child-to-parent updater, EasyEditor | - | Synced from visits |
-| (5.4) Latest Visit Step (From Last Visit) | `LatestVisitStage` | String | 100 | Yes | System | Child-to-parent updater | Domain values | Synced from visits |
-| (5.5) Latest Area M2 (From Last Visit) | `LatestArea` | Double | - | Yes | System | Child-to-parent updater, EasyEditor | >= 0 | Synced from visits |
-| (5.6) Date Of Last Create (From Last Visit) | `DateOfLastCreateFromLastVisit` | Date | - | Yes | System | Child-to-parent updater | - | Visit creation timestamp |
-| (5.7) Date Of Last Edit (From Last Visit) | `DateOfLastEditFromLastVisit` | Date | - | Yes | System | Child-to-parent updater | - | Visit edit timestamp |
 
 ---
 
