@@ -1645,8 +1645,11 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
   # Now merge for analysis
   print("\nMerging WeedLocations with latest visit data...")
   latest_visits = get_latest_visit_per_location(visits_df)
-  merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource']
+  # Always include audit fields even if not in comparison rules (needed for reference date logic)
+  merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource',
+                'visit_CreationDate_1', 'visit_EditDate_1']
   merge_cols.extend([rule['visit_field'] for rule in FIELD_COMPARISON_RULES])
+  merge_cols = list(dict.fromkeys(merge_cols))  # Remove duplicates
   merge_cols = filter_existing_columns(latest_visits, merge_cols)
   
   merged_df = weeds_df.merge(
@@ -1655,6 +1658,12 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
     right_on='GUID_visits',
     how='left'
   )
+  
+  # Ensure audit fields are present (safeguard)
+  if 'visit_CreationDate_1' not in merged_df.columns:
+    merged_df['visit_CreationDate_1'] = None
+  if 'visit_EditDate_1' not in merged_df.columns:
+    merged_df['visit_EditDate_1'] = None
   
   # Apply visit-from-weed corrections if requested (updates latest visits from WeedLocations)
   visit_from_weed_corrections_df = None
