@@ -35,6 +35,11 @@ export ARCGIS_PORTAL_URL="https://your-portal.arcgis.com"
 python spatial_field_updater/spatial_field_updater.py --env development
 ```
 
+**Included Tools**:
+- **spatial_field_updater.py**: Automated region/district assignment
+- **map_weed_locations.py**: Visualization tool for weed location mapping
+- **map_unassigned_points.py**: Identifies and maps unassigned locations
+
 **📚 [View detailed documentation →](spatial_field_updater/README.md)**
 
 ---
@@ -80,6 +85,28 @@ python field_maps_webmap_lister/field_maps_webmap_lister.py
 - 📊 Console summary with statistics and sharing breakdown
 
 **📚 [View detailed documentation →](field_maps_webmap_lister/README.md)**
+
+---
+
+### 🔍 [Data Quality Tools](data_quality/)
+
+Automated tools for analyzing and monitoring data quality in CAMS.
+
+**Purpose**: Identify data quality issues by detecting inconsistencies, missing data, and synchronization problems across related tables.
+
+**Key Features**:
+- 🔄 Weed Visits Analyzer - Date synchronization between WeedLocations and Visits_Table
+- 📊 Detailed reports with statistics and percentages
+- ⚠️ Identifies data quality issues requiring attention
+- ✓ Validates data relationships and integrity
+
+**Quick Start**:
+```bash
+# Analyze weed visits date synchronization
+python data_quality/weed_visits_analyzer.py --env development
+```
+
+**📚 [View detailed documentation →](data_quality/README.md)**
 
 ---
 
