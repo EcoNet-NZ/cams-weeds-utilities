@@ -973,9 +973,12 @@ def generate_mismatch_report(merged_df, output_file='weed_visits_field_compariso
       '← ' + missing_date_export.loc[mask, 'visit_CreationDate_1'].astype(str)
   
   # Create Missing Status sheet - visits where WeedVisitStatus is not set
+  # Exclude cases where ParentStatusWithDomain is missing or starts with Purple (per ignore rule)
   missing_status_df = result_df[
     (result_df['Visit_OBJECTID'].notna()) & 
-    (result_df['WeedVisitStatus'].isna())
+    (result_df['WeedVisitStatus'].isna()) &
+    (result_df['ParentStatusWithDomain'].notna()) &
+    (~result_df['ParentStatusWithDomain'].astype(str).str.startswith('Purple'))
   ].copy()
   
   missing_status_columns = [
@@ -1500,6 +1503,7 @@ def correct_mismatches(weed_layer, merged_df, ignore_creation_edit_dates=False,
       
       corrections.append({
         'WeedLocation_OBJECTID': weed_objectid,
+        'Visit_OBJECTID': row.get('Visit_OBJECTID'),
         'Field': display_name,
         'WeedLocations_Field': weed_field,
         'Old_Value': weed_val,
@@ -1638,18 +1642,33 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
       print(f"Visit corrections log saved to: {visit_corrections_file}")
     
     # Reload visits if we actually made changes
+    # IMPORTANT: Must recompute which visit is "latest" because DateCheck values may have changed!
     if not preview_only and visit_corrections_df is not None and len(visit_corrections_df) > 0:
-      print("\nReloading visits after corrections...")
-      visits_df = load_visits_table(visits_table)
+      successful = visit_corrections_df[visit_corrections_df['Update_Status'] == 'Success']
+      if len(successful) > 0:
+        print("\nReloading visits and recomputing latest visits after visit corrections...")
+        visits_df = load_visits_table(visits_table)
+        latest_visits = get_latest_visit_per_location(visits_df)
+        
+        # Rebuild merged data with new latest visits
+        merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource',
+                      'visit_CreationDate_1', 'visit_EditDate_1']
+        merge_cols.extend([rule['visit_field'] for rule in FIELD_COMPARISON_RULES])
+        merge_cols = list(dict.fromkeys(merge_cols))
+        merge_cols = filter_existing_columns(latest_visits, merge_cols)
+        
+        merged_df = weeds_df.merge(
+          latest_visits[merge_cols],
+          left_on='GlobalID',
+          right_on='GUID_visits',
+          how='left'
+        )
   
   # Now merge for analysis
   print("\nMerging WeedLocations with latest visit data...")
   latest_visits = get_latest_visit_per_location(visits_df)
-  # Always include audit fields even if not in comparison rules (needed for reference date logic)
-  merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource',
-                'visit_CreationDate_1', 'visit_EditDate_1']
+  merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource']
   merge_cols.extend([rule['visit_field'] for rule in FIELD_COMPARISON_RULES])
-  merge_cols = list(dict.fromkeys(merge_cols))  # Remove duplicates
   merge_cols = filter_existing_columns(latest_visits, merge_cols)
   
   merged_df = weeds_df.merge(
@@ -1658,12 +1677,6 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
     right_on='GUID_visits',
     how='left'
   )
-  
-  # Ensure audit fields are present (safeguard)
-  if 'visit_CreationDate_1' not in merged_df.columns:
-    merged_df['visit_CreationDate_1'] = None
-  if 'visit_EditDate_1' not in merged_df.columns:
-    merged_df['visit_EditDate_1'] = None
   
   # Apply visit-from-weed corrections if requested (updates latest visits from WeedLocations)
   visit_from_weed_corrections_df = None
@@ -1681,10 +1694,11 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
       print(f"Visit-from-weed corrections log saved to: {vfw_corrections_file}")
     
     # Reload and re-merge if we actually made changes
+    # IMPORTANT: Recompute "latest" in case earlier steps changed DateCheck values!
     if not preview_only and visit_from_weed_corrections_df is not None and len(visit_from_weed_corrections_df) > 0:
       successful = visit_from_weed_corrections_df[visit_from_weed_corrections_df['Update_Status'] == 'Success']
       if len(successful) > 0:
-        print("\nReloading visits and re-merging after visit-from-weed corrections...")
+        print("\nReloading visits and recomputing latest visits after visit-from-weed corrections...")
         visits_df = load_visits_table(visits_table)
         latest_visits = get_latest_visit_per_location(visits_df)
         merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource',
@@ -1744,10 +1758,23 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
     if not preview_only and corrections_df is not None and len(corrections_df) > 0:
       successful_updates = corrections_df[corrections_df['Update_Status'] == 'Success']
       if len(successful_updates) > 0:
-        print("\nReloading data and regenerating report after corrections...")
-        weeds_df = load_weed_locations(weed_layer)
+        print("\nReloading all data and regenerating report after corrections...")
         
-        # Re-merge
+        # Reload both weeds AND visits (visits may have been updated by earlier correction steps)
+        weeds_df = load_weed_locations(weed_layer)
+        visits_df = load_visits_table(visits_table)
+        
+        # Recompute latest visits
+        latest_visits = get_latest_visit_per_location(visits_df)
+        
+        # Rebuild merge columns
+        merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource',
+                      'visit_CreationDate_1', 'visit_EditDate_1']
+        merge_cols.extend([rule['visit_field'] for rule in FIELD_COMPARISON_RULES])
+        merge_cols = list(dict.fromkeys(merge_cols))
+        merge_cols = filter_existing_columns(latest_visits, merge_cols)
+        
+        # Re-merge with fresh data
         merged_df = weeds_df.merge(
           latest_visits[merge_cols],
           left_on='GlobalID',
@@ -1944,4 +1971,3 @@ Examples:
 
 if __name__ == "__main__":
   main()
-
