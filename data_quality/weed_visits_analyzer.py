@@ -19,10 +19,10 @@ Three Rule Types:
 1. FIELD_COMPARISON_RULES - Compare WeedLocations ↔ Visits_Table
    Used to identify when WeedLocations fields don't match their latest visit data
 
-2. VISIT_CORRECTION_RULES - Correct Visits_Table internal fields (all visits)
+2. VISIT_CORRECTION_RULES - Correct Visits_Table internal fields (latest visits only)
    Used to fix data quality issues within Visits_Table itself
    Example: Set DateCheck from CreationDate_1 when DateCheck is missing
-   Applied to ALL visits in the table
+   Applied only to the LATEST visit per weed location
 
 3. VISIT_FROM_WEED_RULES - Copy from WeedLocations to latest Visit
    Used to update the LATEST visit's fields based on WeedLocations data
@@ -86,7 +86,7 @@ Correction Modes:
 2. Visits Internal (--correct-visits):
    Fixes data quality issues within Visits_Table using VISIT_CORRECTION_RULES.
    Example: Sets DateCheck from CreationDate_1 for visits missing DateCheck.
-   Applied to ALL visits in the table.
+   Applied only to the LATEST visit per weed location.
    
 3. Visits from WeedLocations (--correct-visits-from-weed):
    Updates latest Visit fields based on WeedLocations data using VISIT_FROM_WEED_RULES.
@@ -456,6 +456,11 @@ def load_weed_locations(weed_layer):
   
   features_data = query_with_pagination(weed_layer, out_fields, mapper, "WeedLocations features")
   df = pd.DataFrame(features_data)
+  
+  # Ensure OBJECTID is numeric for consistency
+  if 'WeedLocation_OBJECTID' in df.columns:
+    df['WeedLocation_OBJECTID'] = pd.to_numeric(df['WeedLocation_OBJECTID'], errors='coerce')
+  
   print(f"Loaded {len(df)} weed locations total")
   return df
 
@@ -488,6 +493,11 @@ def load_visits_table(visits_table):
   
   visits_data = query_with_pagination(visits_table, out_fields, mapper, "Visits_Table records")
   df = pd.DataFrame(visits_data)
+  
+  # Ensure OBJECTID is numeric for proper sorting (tiebreaker logic)
+  if 'Visit_OBJECTID' in df.columns:
+    df['Visit_OBJECTID'] = pd.to_numeric(df['Visit_OBJECTID'], errors='coerce')
+  
   print(f"Loaded {len(df)} visit records total")
   return df
 
@@ -501,6 +511,9 @@ def get_latest_visit_per_location(visits_df):
   - Falls back to CreationDate_1 for visits without DateCheck
   
   This "latest" visit is used for ALL field comparisons in FIELD_COMPARISON_RULES
+  
+  Args:
+    visits_df: DataFrame of all visits
   """
   empty_df_columns = [
     'GUID_visits', 'Visit_OBJECTID', 'DifficultyChild', 'WeedVisitStatus',
@@ -512,10 +525,12 @@ def get_latest_visit_per_location(visits_df):
     return pd.DataFrame(columns=empty_df_columns)
   
   # Get visits with DateCheck (preferred)
+  # Use Visit_OBJECTID as tiebreaker when DateCheck values are identical
   visits_with_datecheck = visits_df[visits_df['DateCheck'].notna()].copy()
+  
   latest_by_datecheck = (
-    visits_with_datecheck.sort_values('DateCheck', ascending=False)
-    .groupby('GUID_visits').first().reset_index()
+    visits_with_datecheck.sort_values(['DateCheck', 'Visit_OBJECTID'], ascending=[False, False])
+    .groupby('GUID_visits', as_index=False).head(1)
     if len(visits_with_datecheck) > 0
     else pd.DataFrame(columns=empty_df_columns)
   )
@@ -527,9 +542,10 @@ def get_latest_visit_per_location(visits_df):
   ].copy()
   
   if len(visits_no_datecheck) > 0:
+    # Use Visit_OBJECTID as tiebreaker when CreationDate_1 values are identical
     latest_by_creation = (
-      visits_no_datecheck.sort_values('visit_CreationDate_1', ascending=False)
-      .groupby('GUID_visits').first().reset_index()
+      visits_no_datecheck.sort_values(['visit_CreationDate_1', 'Visit_OBJECTID'], ascending=[False, False])
+      .groupby('GUID_visits', as_index=False).head(1)
     )
     # Only include GUIDs not already covered by DateCheck
     guids_with_datecheck = set(latest_by_datecheck['GUID_visits'])
@@ -792,16 +808,25 @@ def check_field_mismatches(merged_df, ignore_creation_edit_dates=False):
       weed_val = row.get(weed_field)
       visit_val = row.get(visit_field)
       
-      # Skip if visit value is missing (no visit record)
-      if pd.isna(visit_val):
+      # Skip if no visit record exists at all
+      if pd.isna(row.get('Visit_OBJECTID')):
         continue
       
       # Apply custom ignore condition if specified
       if ignore_condition and ignore_condition(weed_val, visit_val):
         continue
       
-      # Check for mismatch
-      if weed_val != visit_val:
+      # Check for mismatch (includes cases where weed has value but visit is null)
+      # Use pandas-safe comparison that handles NaN properly
+      is_mismatch = False
+      if pd.isna(weed_val) and pd.isna(visit_val):
+        is_mismatch = False  # Both null = match
+      elif pd.isna(weed_val) or pd.isna(visit_val):
+        is_mismatch = True  # One null, one not = mismatch
+      else:
+        is_mismatch = (weed_val != visit_val)  # Both have values = compare
+      
+      if is_mismatch:
         result_df.at[idx, mismatch_col] = 'X'
         # Store mismatch reason with actual values
         weed_str = str(weed_val) if pd.notna(weed_val) else 'null'
@@ -1224,13 +1249,13 @@ def format_report(counts):
   return "\n".join(report)
 
 
-def correct_visits_table(visits_table, visits_df, preview_only=False):
+def correct_visits_table(visits_table, latest_visits_df, preview_only=False):
   """
   Correct Visit_Table fields using VISIT_CORRECTION_RULES
   
   Args:
     visits_table: Visits_Table object
-    visits_df: DataFrame with all visit records
+    latest_visits_df: DataFrame with latest visit records only (one per weed location)
     preview_only: If True, show what would change without making changes
   
   Returns:
@@ -1251,8 +1276,8 @@ def correct_visits_table(visits_table, visits_df, preview_only=False):
     condition = rule['condition']
     display_name = rule['display_name']
     
-    # Find records that meet the correction condition
-    applicable_records = visits_df[visits_df.apply(condition, axis=1)].copy()
+    # Find records that meet the correction condition (latest visits only)
+    applicable_records = latest_visits_df[latest_visits_df.apply(condition, axis=1)].copy()
     
     if len(applicable_records) == 0:
       continue
@@ -1293,18 +1318,12 @@ def correct_visits_table(visits_table, visits_df, preview_only=False):
     
     field_name = correction['Target_Field']
     new_value = correction['New_Value']
+    
+    # Convert pandas NaN to Python None for ArcGIS compatibility
+    if pd.isna(new_value):
+      new_value = None
+    
     updates_by_objectid[objectid][field_name] = new_value
-  
-  # Confirmation prompt
-  print("\n" + "!" * 80)
-  print("WARNING: You are about to update Visits_Table records!")
-  print(f"This will modify {len(updates_by_objectid)} visit records.")
-  print("!" * 80)
-  response = input("\nType 'YES' to proceed with visit corrections: ")
-  
-  if response != 'YES':
-    print("Correction cancelled by user.")
-    return pd.DataFrame()
   
   # Apply corrections in batches
   print("\nApplying visit corrections in batches...")
@@ -1399,18 +1418,12 @@ def correct_visits_from_weed(visits_table, merged_df, preview_only=False):
     
     field_name = correction['Visit_Field']
     new_value = correction['New_Value']
+    
+    # Convert pandas NaN to Python None for ArcGIS compatibility
+    if pd.isna(new_value):
+      new_value = None
+    
     updates_by_objectid[objectid][field_name] = new_value
-  
-  # Confirmation prompt
-  print("\n" + "!" * 80)
-  print("WARNING: You are about to update Visits_Table (latest visits) from WeedLocations!")
-  print(f"This will modify {len(updates_by_objectid)} visit records.")
-  print("!" * 80)
-  response = input("\nType 'YES' to proceed with visit-from-weed corrections: ")
-  
-  if response != 'YES':
-    print("Correction cancelled by user.")
-    return pd.DataFrame()
   
   # Apply corrections in batches
   print("\nApplying visit-from-weed corrections in batches...")
@@ -1496,10 +1509,9 @@ def correct_mismatches(weed_layer, merged_df, ignore_creation_edit_dates=False,
         ignored_count += 1
         continue
       
-      # Skip if visit value is null (nothing to correct to)
+      # Count null visit values but still correct them (clear weed field to match)
       if pd.isna(visit_val):
         null_count += 1
-        continue
       
       corrections.append({
         'WeedLocation_OBJECTID': weed_objectid,
@@ -1507,7 +1519,7 @@ def correct_mismatches(weed_layer, merged_df, ignore_creation_edit_dates=False,
         'Field': display_name,
         'WeedLocations_Field': weed_field,
         'Old_Value': weed_val,
-        'New_Value': visit_val,
+        'New_Value': visit_val,  # This may be null/None - will clear the weed field
         'Visit_Reference_Date_Field': row.get('Visit_Reference_Date_Field'),
         'Visit_Reference_Date': row.get('Visit_Reference_Date'),
         'VisitDataSource': row.get('VisitDataSource')
@@ -1521,7 +1533,7 @@ def correct_mismatches(weed_layer, merged_df, ignore_creation_edit_dates=False,
         'Null_Visit_Values': null_count,
         'Will_Correct': len(field_mismatches) - ignored_count - null_count
       })
-      print(f"  → Will correct: {len(field_mismatches) - ignored_count - null_count} (ignored: {ignored_count}, null values: {null_count})")
+      print(f"  → Will correct: {len(field_mismatches) - ignored_count} (ignored: {ignored_count}, clearing to null: {null_count})")
   
   corrections_df = pd.DataFrame(corrections)
   
@@ -1539,7 +1551,7 @@ def correct_mismatches(weed_layer, merged_df, ignore_creation_edit_dates=False,
       if row['Ignored_by_Condition'] > 0:
         print(f"    - {row['Ignored_by_Condition']} ignored by rule condition (e.g., Purple status, bulk load date)")
       if row['Null_Visit_Values'] > 0:
-        print(f"    - {row['Null_Visit_Values']} have null visit values (nothing to correct to)")
+        print(f"    - {row['Null_Visit_Values']} will be cleared to null (latest visit has no value)")
   
   if preview_only:
     print("\n[PREVIEW ONLY - No changes made]")
@@ -1554,18 +1566,12 @@ def correct_mismatches(weed_layer, merged_df, ignore_creation_edit_dates=False,
     
     field_name = correction['WeedLocations_Field']
     new_value = correction['New_Value']
+    
+    # Convert pandas NaN to Python None for ArcGIS compatibility
+    if pd.isna(new_value):
+      new_value = None
+    
     updates_by_objectid[objectid][field_name] = new_value
-  
-  # Confirmation prompt for actual changes
-  print("\n" + "!" * 80)
-  print("WARNING: You are about to update WeedLocations records!")
-  print(f"This will modify {len(updates_by_objectid)} records in the database.")
-  print("!" * 80)
-  response = input("\nType 'YES' to proceed with corrections: ")
-  
-  if response != 'YES':
-    print("Correction cancelled by user.")
-    return pd.DataFrame()
   
   # Apply corrections in batches
   print("\nApplying corrections in batches...")
@@ -1628,7 +1634,9 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
   # Apply visit corrections first if requested
   visit_corrections_df = None
   if correct_visits_flag:
-    visit_corrections_df = correct_visits_table(visits_table, visits_df, preview_only)
+    # Get latest visits before corrections (to determine which visits to correct)
+    latest_visits = get_latest_visit_per_location(visits_df)
+    visit_corrections_df = correct_visits_table(visits_table, latest_visits, preview_only)
     
     # Save visit corrections log
     if visit_corrections_df is not None and len(visit_corrections_df) > 0:
@@ -1667,8 +1675,13 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
   # Now merge for analysis
   print("\nMerging WeedLocations with latest visit data...")
   latest_visits = get_latest_visit_per_location(visits_df)
-  merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource']
+  # Build merge columns from rules (all visit fields needed for comparison)
+  # Always include audit fields even if not in comparison rules (needed for reference date logic)
+  merge_cols = ['GUID_visits', 'Visit_OBJECTID', 'VisitDataSource', 
+                'visit_CreationDate_1', 'visit_EditDate_1']
   merge_cols.extend([rule['visit_field'] for rule in FIELD_COMPARISON_RULES])
+  # Remove duplicates while preserving order
+  merge_cols = list(dict.fromkeys(merge_cols))
   merge_cols = filter_existing_columns(latest_visits, merge_cols)
   
   merged_df = weeds_df.merge(
@@ -1677,6 +1690,12 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
     right_on='GUID_visits',
     how='left'
   )
+  
+  # Ensure audit fields are present (in case they were filtered out or missing from source)
+  if 'visit_CreationDate_1' not in merged_df.columns:
+    merged_df['visit_CreationDate_1'] = None
+  if 'visit_EditDate_1' not in merged_df.columns:
+    merged_df['visit_EditDate_1'] = None
   
   # Apply visit-from-weed corrections if requested (updates latest visits from WeedLocations)
   visit_from_weed_corrections_df = None
@@ -1797,13 +1816,37 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
         )
         print(f"Post-correction report saved to: {post_correction_file}")
   
-  # Also run legacy date matching analysis for backward compatibility
-  print("\nAnalyzing date matching (legacy report)...")
-  counts = analyze_date_matching(merged_df)
-  report = format_report(counts)
-  print(report)
+  # Print final summary
+  print("\n" + "=" * 80)
+  print("FINAL SUMMARY")
+  print("=" * 80)
   
-  return counts, merged_df, overall_summary, field_summary, mismatches, corrections_df, visit_corrections_df, visit_from_weed_corrections_df
+  # Get mismatch counts by field
+  result_df, mismatch_columns, active_rules = check_field_mismatches(merged_df, ignore_creation_edit_dates)
+  
+  print(f"\nTotal WeedLocations: {len(result_df):,}")
+  print(f"Locations with visits: {result_df['Visit_OBJECTID'].notna().sum():,}")
+  print(f"Locations with field mismatches: {result_df['Has_Any_Mismatch'].sum():,}")
+  
+  # Show mismatch breakdown by field
+  print("\nMismatch breakdown by field:")
+  for rule in active_rules:
+    mismatch_col = rule['mismatch_column']
+    mismatch_count = (result_df[mismatch_col] == 'X').sum()
+    if mismatch_count > 0:
+      print(f"  {rule['display_name']}: {mismatch_count:,}")
+  
+  # Show correction summary if corrections were applied
+  if corrections_df is not None and len(corrections_df) > 0:
+    print(f"\nWeedLocations corrections applied: {len(corrections_df[corrections_df['Update_Status'] == 'Success']):,} successful")
+  if visit_corrections_df is not None and len(visit_corrections_df) > 0:
+    print(f"Visit internal corrections applied: {len(visit_corrections_df[visit_corrections_df['Update_Status'] == 'Success']):,} successful")
+  if visit_from_weed_corrections_df is not None and len(visit_from_weed_corrections_df) > 0:
+    print(f"Visit-from-weed corrections applied: {len(visit_from_weed_corrections_df[visit_from_weed_corrections_df['Update_Status'] == 'Success']):,} successful")
+  
+  print("=" * 80 + "\n")
+  
+  return merged_df, overall_summary, field_summary, mismatches, corrections_df, visit_corrections_df, visit_from_weed_corrections_df
 
 
 def main():
