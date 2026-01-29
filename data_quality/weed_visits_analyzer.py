@@ -1249,13 +1249,13 @@ def format_report(counts):
   return "\n".join(report)
 
 
-def correct_visits_table(visits_table, latest_visits_df, preview_only=False):
+def correct_visits_table(visits_table, visits_df, preview_only=False):
   """
   Correct Visit_Table fields using VISIT_CORRECTION_RULES
   
   Args:
     visits_table: Visits_Table object
-    latest_visits_df: DataFrame with latest visit records only (one per weed location)
+    visits_df: DataFrame with ALL visit records
     preview_only: If True, show what would change without making changes
   
   Returns:
@@ -1634,9 +1634,7 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
   # Apply visit corrections first if requested
   visit_corrections_df = None
   if correct_visits_flag:
-    # Get latest visits before corrections (to determine which visits to correct)
-    latest_visits = get_latest_visit_per_location(visits_df)
-    visit_corrections_df = correct_visits_table(visits_table, latest_visits, preview_only)
+    visit_corrections_df = correct_visits_table(visits_table, visits_df, preview_only)
     
     # Save visit corrections log
     if visit_corrections_df is not None and len(visit_corrections_df) > 0:
