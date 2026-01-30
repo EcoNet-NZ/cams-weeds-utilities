@@ -1276,8 +1276,8 @@ def correct_visits_table(visits_table, visits_df, preview_only=False):
     condition = rule['condition']
     display_name = rule['display_name']
     
-    # Find records that meet the correction condition (latest visits only)
-    applicable_records = latest_visits_df[latest_visits_df.apply(condition, axis=1)].copy()
+    # Find records that meet the correction condition
+    applicable_records = visits_df[visits_df.apply(condition, axis=1)].copy()
     
     if len(applicable_records) == 0:
       continue
