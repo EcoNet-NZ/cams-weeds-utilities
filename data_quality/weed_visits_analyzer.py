@@ -110,6 +110,9 @@ Usage Examples:
   # List all available rules
   python weed_visits_analyzer.py --list-fields
   
+  # Inspect a specific weed instance by OBJECTID
+  python weed_visits_analyzer.py --env development --instance-id 12345
+  
   # Preview all corrections
   python weed_visits_analyzer.py --env development --correct-all --preview
   
@@ -153,7 +156,6 @@ REFERENCE_DATE_DESCRIPTION = (
 # "2021-10-09 21:19:26" UTC = 1633767566000 (epoch ms)
 INITIAL_BULK_LOAD_DATE_TIMESTAMP = 1633767566000
 INITIAL_BULK_LOAD_DATE_ISO = "2021-10-09 21:19:26"
-
 
 VISIT_CORRECTION_RULES = [
   {
@@ -1834,17 +1836,409 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
     if mismatch_count > 0:
       print(f"  {rule['display_name']}: {mismatch_count:,}")
   
-  # Show correction summary if corrections were applied
+  # Preview-only runs return logs before apply_batched_updates, so no Update_Status column yet
   if corrections_df is not None and len(corrections_df) > 0:
-    print(f"\nWeedLocations corrections applied: {len(corrections_df[corrections_df['Update_Status'] == 'Success']):,} successful")
+    if 'Update_Status' in corrections_df.columns:
+      print(f"\nWeedLocations corrections applied: {len(corrections_df[corrections_df['Update_Status'] == 'Success']):,} successful")
+    else:
+      print(f"\nWeedLocations corrections (preview): {len(corrections_df):,} planned")
   if visit_corrections_df is not None and len(visit_corrections_df) > 0:
-    print(f"Visit internal corrections applied: {len(visit_corrections_df[visit_corrections_df['Update_Status'] == 'Success']):,} successful")
+    if 'Update_Status' in visit_corrections_df.columns:
+      print(f"Visit internal corrections applied: {len(visit_corrections_df[visit_corrections_df['Update_Status'] == 'Success']):,} successful")
+    else:
+      print(f"Visit internal corrections (preview): {len(visit_corrections_df):,} planned")
   if visit_from_weed_corrections_df is not None and len(visit_from_weed_corrections_df) > 0:
-    print(f"Visit-from-weed corrections applied: {len(visit_from_weed_corrections_df[visit_from_weed_corrections_df['Update_Status'] == 'Success']):,} successful")
+    if 'Update_Status' in visit_from_weed_corrections_df.columns:
+      print(f"Visit-from-weed corrections applied: {len(visit_from_weed_corrections_df[visit_from_weed_corrections_df['Update_Status'] == 'Success']):,} successful")
+    else:
+      print(f"Visit-from-weed corrections (preview): {len(visit_from_weed_corrections_df):,} planned")
   
   print("=" * 80 + "\n")
   
   return merged_df, overall_summary, field_summary, mismatches, corrections_df, visit_corrections_df, visit_from_weed_corrections_df
+
+
+def inspect_weed_instance(weed_layer, visits_table, weed_objectid, ignore_creation_edit_dates=False):
+  """
+  Inspect a single weed instance by OBJECTID, showing all related visits and field comparisons
+  
+  Args:
+    weed_layer: WeedLocations FeatureLayer
+    visits_table: Visits_Table object
+    weed_objectid: OBJECTID of weed instance to inspect
+    ignore_creation_edit_dates: If True, skip audit fields in comparison
+  """
+  print("=" * 80)
+  print(f"WEED INSTANCE INSPECTION: OBJECTID {weed_objectid}")
+  print("=" * 80)
+  print()
+  
+  # Load specific weed location
+  print(f"Loading weed location OBJECTID {weed_objectid}...")
+  try:
+    weed_result = weed_layer.query(
+      where=f"OBJECTID = {weed_objectid}",
+      out_fields=[
+        "OBJECTID", "GlobalID",
+        "Urgency", "ParentStatusWithDomain",
+        "DateVisitMadeFromLastVisit", "DateForNextVisitFromLastVisit",
+        "LatestVisitStage", "LatestArea",
+        "DateOfLastCreateFromLastVisit", "DateOfLastEditFromLastVisit",
+        "DateDiscovered", "CreationDate_1"
+      ],
+      return_geometry=False
+    )
+    
+    if not weed_result.features or len(weed_result.features) == 0:
+      print(f"ERROR: Weed location with OBJECTID {weed_objectid} not found.")
+      print("=" * 80)
+      return
+    
+    weed_attrs = weed_result.features[0].attributes
+    global_id = weed_attrs.get('GlobalID')
+    
+    if not global_id:
+      print(f"ERROR: Weed location {weed_objectid} has no GlobalID.")
+      print("=" * 80)
+      return
+    
+    print(f"Found weed location with GlobalID: {global_id}")
+    
+  except Exception as e:
+    print(f"ERROR loading weed location: {e}")
+    print("=" * 80)
+    return
+  
+  # Load all related visits
+  print(f"Loading all visits for this weed location...")
+  try:
+    visits_result = visits_table.query(
+      where=f"GUID_visits = '{global_id}'",
+      out_fields=[
+        "OBJECTID", "GUID_visits",
+        "DifficultyChild", "WeedVisitStatus",
+        "DateCheck", "DateForReturnVisit",
+        "VisitStage", "Area",
+        "CreationDate_1", "EditDate_1",
+        "VisitDataSource"
+      ],
+      return_geometry=False
+    )
+    
+    visits_data = []
+    for f in visits_result.features:
+      visits_data.append({
+        'Visit_OBJECTID': f.attributes.get('OBJECTID'),
+        'GUID_visits': f.attributes.get('GUID_visits'),
+        'DifficultyChild': f.attributes.get('DifficultyChild'),
+        'WeedVisitStatus': f.attributes.get('WeedVisitStatus'),
+        'DateCheck': f.attributes.get('DateCheck'),
+        'DateForReturnVisit': f.attributes.get('DateForReturnVisit'),
+        'VisitStage': f.attributes.get('VisitStage'),
+        'Area': f.attributes.get('Area'),
+        'visit_CreationDate_1': f.attributes.get('CreationDate_1'),
+        'visit_EditDate_1': f.attributes.get('EditDate_1'),
+        'VisitDataSource': f.attributes.get('VisitDataSource')
+      })
+    
+    visits_df = pd.DataFrame(visits_data)
+    print(f"Found {len(visits_df)} visit(s)")
+    
+  except Exception as e:
+    print(f"ERROR loading visits: {e}")
+    visits_df = pd.DataFrame()
+  
+  # Determine latest visit using existing logic
+  latest_visit = None
+  latest_visit_reason = None
+  
+  if len(visits_df) > 0:
+    latest_visits_df = get_latest_visit_per_location(visits_df)
+    if len(latest_visits_df) > 0:
+      latest_visit = latest_visits_df.iloc[0].to_dict()
+      
+      # Determine reason for latest selection
+      if pd.notna(latest_visit.get('DateCheck')):
+        latest_visit_reason = f"Selected by DateCheck ({convert_arcgis_timestamp_to_iso(latest_visit['DateCheck'])})"
+      elif pd.notna(latest_visit.get('visit_CreationDate_1')):
+        latest_visit_reason = f"Selected by CreationDate_1 ({convert_arcgis_timestamp_to_iso(latest_visit['visit_CreationDate_1'])})"
+      else:
+        latest_visit_reason = "Selected (no date available)"
+  
+  # Sort visits chronologically for display
+  if len(visits_df) > 0:
+    # Sort: DateCheck desc (nulls last), then CreationDate_1 desc, then OBJECTID desc
+    visits_df_sorted = visits_df.copy()
+    visits_df_sorted['DateCheck_sort'] = visits_df_sorted['DateCheck'].fillna(0)
+    visits_df_sorted['CreationDate_sort'] = visits_df_sorted['visit_CreationDate_1'].fillna(0)
+    visits_df_sorted = visits_df_sorted.sort_values(
+      ['DateCheck_sort', 'CreationDate_sort', 'Visit_OBJECTID'],
+      ascending=[False, False, False]
+    )
+  
+  # Section A: Weed Location Details
+  print()
+  print("[Section A: Weed Location Details]")
+  print("-" * 80)
+  print(f"  OBJECTID: {weed_attrs.get('OBJECTID')}")
+  print(f"  GlobalID: {weed_attrs.get('GlobalID')}")
+  print(f"  Urgency: {weed_attrs.get('Urgency') if pd.notna(weed_attrs.get('Urgency')) else '(null)'}")
+  print(f"  ParentStatusWithDomain: {weed_attrs.get('ParentStatusWithDomain') if pd.notna(weed_attrs.get('ParentStatusWithDomain')) else '(null)'}")
+  print(f"  DateVisitMadeFromLastVisit: {convert_arcgis_timestamp_to_iso(weed_attrs.get('DateVisitMadeFromLastVisit')) if pd.notna(weed_attrs.get('DateVisitMadeFromLastVisit')) else '(null)'}")
+  print(f"  DateForNextVisitFromLastVisit: {convert_arcgis_timestamp_to_iso(weed_attrs.get('DateForNextVisitFromLastVisit')) if pd.notna(weed_attrs.get('DateForNextVisitFromLastVisit')) else '(null)'}")
+  print(f"  LatestVisitStage: {weed_attrs.get('LatestVisitStage') if pd.notna(weed_attrs.get('LatestVisitStage')) else '(null)'}")
+  print(f"  LatestArea: {weed_attrs.get('LatestArea') if pd.notna(weed_attrs.get('LatestArea')) else '(null)'}")
+  print(f"  DateDiscovered: {convert_arcgis_timestamp_to_iso(weed_attrs.get('DateDiscovered')) if pd.notna(weed_attrs.get('DateDiscovered')) else '(null)'}")
+  print(f"  CreationDate_1: {convert_arcgis_timestamp_to_iso(weed_attrs.get('CreationDate_1')) if pd.notna(weed_attrs.get('CreationDate_1')) else '(null)'}")
+  
+  # Section B: All Related Visits
+  print()
+  print(f"[Section B: All Related Visits ({len(visits_df)} total)]")
+  print("-" * 80)
+  
+  if len(visits_df) == 0:
+    print("  No visits found for this weed location.")
+  else:
+    for idx, (_, visit) in enumerate(visits_df_sorted.iterrows(), 1):
+      visit_oid = visit['Visit_OBJECTID']
+      is_latest = latest_visit and visit_oid == latest_visit.get('Visit_OBJECTID')
+      
+      # Determine primary date for display
+      primary_date = None
+      date_source = None
+      if pd.notna(visit['DateCheck']):
+        primary_date = convert_arcgis_timestamp_to_iso(visit['DateCheck'])
+        date_source = "DateCheck"
+      elif pd.notna(visit['visit_CreationDate_1']):
+        primary_date = convert_arcgis_timestamp_to_iso(visit['visit_CreationDate_1'])
+        date_source = "CreationDate_1"
+      else:
+        primary_date = "(no date)"
+        date_source = ""
+      
+      latest_marker = " ← LATEST" if is_latest else ""
+      
+      print(f"  Visit #{idx} (OBJECTID: {visit_oid}) - {primary_date} ({date_source}){latest_marker}")
+      print(f"    Status: {visit['WeedVisitStatus'] if pd.notna(visit['WeedVisitStatus']) else '(null)'}")
+      print(f"    Urgency: {visit['DifficultyChild'] if pd.notna(visit['DifficultyChild']) else '(null)'}")
+      print(f"    Stage: {visit['VisitStage'] if pd.notna(visit['VisitStage']) else '(null)'}")
+      print(f"    Area: {visit['Area'] if pd.notna(visit['Area']) else '(null)'}")
+      print(f"    Source: {visit['VisitDataSource'] if pd.notna(visit['VisitDataSource']) else '(null)'}")
+      
+      if is_latest and latest_visit_reason:
+        print(f"    Selection: {latest_visit_reason}")
+      print()
+  
+  # Section C: Latest Visit Details
+  if latest_visit:
+    print()
+    print("[Section C: Latest Visit Details]")
+    print("-" * 80)
+    
+    ref_date = None
+    ref_field = None
+    if pd.notna(latest_visit.get('DateCheck')):
+      ref_date = convert_arcgis_timestamp_to_iso(latest_visit['DateCheck'])
+      ref_field = "DateCheck"
+    elif pd.notna(latest_visit.get('visit_CreationDate_1')):
+      ref_date = convert_arcgis_timestamp_to_iso(latest_visit['visit_CreationDate_1'])
+      ref_field = "CreationDate_1"
+    
+    if ref_date and ref_field:
+      print(f"  Reference Date: {ref_date} (from {ref_field})")
+    else:
+      print(f"  Reference Date: (none)")
+    
+    print(f"  Visit_OBJECTID: {latest_visit.get('Visit_OBJECTID')}")
+    print(f"  DifficultyChild: {latest_visit.get('DifficultyChild') if pd.notna(latest_visit.get('DifficultyChild')) else '(null)'}")
+    print(f"  WeedVisitStatus: {latest_visit.get('WeedVisitStatus') if pd.notna(latest_visit.get('WeedVisitStatus')) else '(null)'}")
+    print(f"  DateCheck: {convert_arcgis_timestamp_to_iso(latest_visit.get('DateCheck')) if pd.notna(latest_visit.get('DateCheck')) else '(null)'}")
+    print(f"  DateForReturnVisit: {convert_arcgis_timestamp_to_iso(latest_visit.get('DateForReturnVisit')) if pd.notna(latest_visit.get('DateForReturnVisit')) else '(null)'}")
+    print(f"  VisitStage: {latest_visit.get('VisitStage') if pd.notna(latest_visit.get('VisitStage')) else '(null)'}")
+    print(f"  Area: {latest_visit.get('Area') if pd.notna(latest_visit.get('Area')) else '(null)'}")
+    print(f"  VisitDataSource: {latest_visit.get('VisitDataSource') if pd.notna(latest_visit.get('VisitDataSource')) else '(null)'}")
+  
+  # Section D: Field Comparison Analysis
+  print()
+  active_rules = get_active_rules(ignore_creation_edit_dates, None)
+  print(f"[Section D: Field Comparison Analysis ({len(active_rules)} rules evaluated)]")
+  print("-" * 80)
+  
+  if not latest_visit:
+    print("  No latest visit available for comparison.")
+  else:
+    mismatches = []
+    matches = []
+    ignored = []
+    
+    for rule in active_rules:
+      weed_field = rule['weed_field']
+      visit_field = rule['visit_field']
+      display_name = rule['display_name']
+      ignore_condition = rule.get('ignore_condition')
+      
+      weed_val = weed_attrs.get(weed_field)
+      visit_val = latest_visit.get(visit_field)
+      
+      # Format values for display
+      weed_str = str(weed_val) if pd.notna(weed_val) else '(null)'
+      visit_str = str(visit_val) if pd.notna(visit_val) else '(null)'
+      
+      # Check if ignored
+      if ignore_condition and ignore_condition(weed_val, visit_val):
+        ignored.append({
+          'name': display_name,
+          'weed': weed_str,
+          'visit': visit_str,
+          'description': rule['description']
+        })
+        continue
+      
+      # Check for mismatch
+      is_mismatch = False
+      if pd.isna(weed_val) and pd.isna(visit_val):
+        is_mismatch = False
+      elif pd.isna(weed_val) or pd.isna(visit_val):
+        is_mismatch = True
+      else:
+        is_mismatch = (weed_val != visit_val)
+      
+      if is_mismatch:
+        mismatches.append({
+          'name': display_name,
+          'weed': weed_str,
+          'visit': visit_str,
+          'visit_field': visit_field,
+          'description': rule['description']
+        })
+      else:
+        matches.append({
+          'name': display_name,
+          'weed': weed_str,
+          'visit': visit_str
+        })
+    
+    # Display results
+    print()
+    if mismatches:
+      print("  Mismatches:")
+      for m in mismatches:
+        print(f"    ✗ {m['name']}")
+        print(f"      WeedLocation: {m['weed']} | Latest Visit: {m['visit']} | STATUS: MISMATCH")
+        print(f"      → Would correct weed field to: {m['visit']}")
+        print()
+    
+    if matches:
+      print("  Matches:")
+      for m in matches:
+        print(f"    ✓ {m['name']}")
+        print(f"      WeedLocation: {m['weed']} | Latest Visit: {m['visit']} | STATUS: MATCH")
+      print()
+    
+    if ignored:
+      print("  Ignored (by rule condition):")
+      for i in ignored:
+        print(f"    ⊘ {i['name']}")
+        print(f"      WeedLocation: {i['weed']} | Latest Visit: {i['visit']} | STATUS: IGNORED")
+        print(f"      Reason: {i['description']}")
+      print()
+  
+  # Section E: Correction Recommendations
+  print()
+  print("[Section E: Correction Recommendations]")
+  print("-" * 80)
+  print()
+  
+  # E1: Visit Internal Corrections
+  print("  E1: Visit Internal Corrections (VISIT_CORRECTION_RULES)")
+  print("  " + "-" * 76)
+  
+  if not latest_visit:
+    print("    No latest visit available")
+  else:
+    visit_corrections = []
+    for rule in VISIT_CORRECTION_RULES:
+      target_field = rule['target_field']
+      source_field = rule['source_field']
+      condition = rule['condition']
+      display_name = rule['display_name']
+      
+      # Check condition on latest visit
+      if condition(pd.Series(latest_visit)):
+        source_val = latest_visit.get(source_field)
+        source_str = str(source_val) if pd.notna(source_val) else '(null)'
+        visit_corrections.append({
+          'name': display_name,
+          'target': target_field,
+          'value': source_str,
+          'description': rule['description']
+        })
+    
+    if visit_corrections:
+      for vc in visit_corrections:
+        print(f"    • {vc['name']}: {vc['target']} ← {vc['value']}")
+        print(f"      {vc['description']}")
+    else:
+      print("    ✓ No corrections needed for latest visit")
+  
+  print()
+  
+  # E2: Visit from Weed Corrections
+  print("  E2: Visit from Weed Corrections (VISIT_FROM_WEED_RULES)")
+  print("  " + "-" * 76)
+  
+  if not latest_visit:
+    print("    No latest visit available")
+  else:
+    visit_from_weed_corrections = []
+    for rule in VISIT_FROM_WEED_RULES:
+      visit_field = rule['visit_field']
+      weed_field = rule['weed_field']
+      condition = rule['condition']
+      display_name = rule['display_name']
+      
+      # Build combined row for condition check
+      combined_row = pd.Series({**weed_attrs, **latest_visit})
+      
+      if condition(combined_row):
+        weed_val = weed_attrs.get(weed_field)
+        weed_str = str(weed_val) if pd.notna(weed_val) else '(null)'
+        visit_from_weed_corrections.append({
+          'name': display_name,
+          'target': visit_field,
+          'value': weed_str,
+          'description': rule['description']
+        })
+    
+    if visit_from_weed_corrections:
+      for vfw in visit_from_weed_corrections:
+        print(f"    • {vfw['name']}: {vfw['target']} ← {vfw['value']}")
+        print(f"      {vfw['description']}")
+    else:
+      print("    ✓ No corrections needed for latest visit")
+  
+  print()
+  
+  # E3: Weed from Visit Corrections
+  print("  E3: Weed from Visit Corrections (FIELD_COMPARISON_RULES)")
+  print("  " + "-" * 76)
+  
+  if not latest_visit:
+    print("    No latest visit available")
+  elif not mismatches:
+    print("    ✓ No corrections needed for weed location")
+  else:
+    for m in mismatches:
+      print(f"    • {m['name']}: {m['weed']} → {m['visit']} (from {m['visit_field']})")
+  
+  # Summary
+  print()
+  mismatch_count = len(mismatches) if latest_visit else 0
+  correction_count = mismatch_count
+  
+  print(f"Summary: {mismatch_count} field mismatch(es) found, {correction_count} correction(s) recommended")
+  print("=" * 80)
+  print()
 
 
 def main():
@@ -1855,6 +2249,9 @@ def main():
 Examples:
   # Analyze and generate report only
   python weed_visits_analyzer.py --env development
+
+  # Inspect a specific weed instance by OBJECTID
+  python weed_visits_analyzer.py --env development --instance-id 12345
 
   # Preview all corrections
   python weed_visits_analyzer.py --env development --correct-all --preview
@@ -1934,6 +2331,12 @@ Examples:
     action='store_true',
     help='List available field names and exit'
   )
+  parser.add_argument(
+    '--instance-id',
+    dest='instance_id',
+    type=int,
+    help='Inspect a specific weed instance by OBJECTID'
+  )
   
   args = parser.parse_args()
   
@@ -1970,6 +2373,24 @@ Examples:
       print(f"    Source (Weed): {rule['weed_field']}")
       print(f"    Description: {rule['description']}")
       print()
+    return
+  
+  # Handle --instance-id (inspect mode)
+  if args.instance_id:
+    if not args.environment:
+      parser.error("--env is required for --instance-id")
+    
+    # Connect to ArcGIS and get layers
+    gis = connect_arcgis()
+    weed_layer, visits_table = get_layers(gis, args.environment)
+    
+    # Run inspection
+    inspect_weed_instance(
+      weed_layer,
+      visits_table,
+      args.instance_id,
+      args.ignore_creation_edit_dates
+    )
     return
   
   # Validate environment is provided for actual analysis/corrections
