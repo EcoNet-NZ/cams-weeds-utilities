@@ -13,6 +13,7 @@ Key Features:
 - Detailed mismatch explanations with actual field values
 - Supports custom ignore conditions for special cases (e.g., Purple statuses, bulk load dates)
 - **Data Correction Mode**: Automatically fix mismatches and data quality issues
+- Field comparison Excel: optional first column **JIRA #** (e.g. SYS-403) when any Visits_Table row for the weed has blank DateCheck and VisitDataSource matches the community import source (see module constants)
 
 Three Rule Types:
 
@@ -156,6 +157,10 @@ REFERENCE_DATE_DESCRIPTION = (
 # "2021-10-09 21:19:26" UTC = 1633767566000 (epoch ms)
 INITIAL_BULK_LOAD_DATE_TIMESTAMP = 1633767566000
 INITIAL_BULK_LOAD_DATE_ISO = "2021-10-09 21:19:26"
+
+# JIRA # column in field-comparison workbook: flag weeds with any visit row matching this pattern
+JIRA_SYS403_ISSUE_KEY = 'SYS-403'
+JIRA_SYS403_VISIT_DATASOURCE = 'Weedsv0.8 Community'
 
 VISIT_CORRECTION_RULES = [
   {
@@ -501,6 +506,31 @@ def load_visits_table(visits_table):
     df['Visit_OBJECTID'] = pd.to_numeric(df['Visit_OBJECTID'], errors='coerce')
   
   print(f"Loaded {len(df)} visit records total")
+  return df
+
+
+def _globalids_sys403_blank_datecheck_community(visits_df):
+  """
+  GlobalIDs (GUID_visits) that have at least one visit with null DateCheck and
+  VisitDataSource == JIRA_SYS403_VISIT_DATASOURCE. Compared as str to Weed GlobalID.
+  """
+  required = {'GUID_visits', 'DateCheck', 'VisitDataSource'}
+  if visits_df is None or len(visits_df) == 0 or not required.issubset(visits_df.columns):
+    return set()
+  mask = visits_df['DateCheck'].isna() & (visits_df['VisitDataSource'] == JIRA_SYS403_VISIT_DATASOURCE)
+  g = visits_df.loc[mask, 'GUID_visits'].dropna()
+  return {str(x) for x in g}
+
+
+def add_jira_sys403_column(merged_df, visits_df):
+  """Return copy of merged_df with JIRA # set for SYS-403 rule; empty string otherwise."""
+  df = merged_df.copy()
+  flagged = _globalids_sys403_blank_datecheck_community(visits_df)
+  df['JIRA #'] = ''
+  if not flagged or 'GlobalID' not in df.columns:
+    return df
+  gid_str = df['GlobalID'].apply(lambda g: str(g) if pd.notna(g) else None)
+  df.loc[gid_str.isin(flagged), 'JIRA #'] = JIRA_SYS403_ISSUE_KEY
   return df
 
 
@@ -851,7 +881,7 @@ def check_field_mismatches(merged_df, ignore_creation_edit_dates=False):
   return result_df, mismatch_columns, active_rules
 
 
-def generate_mismatch_report(merged_df, output_file='weed_visits_field_comparison.xlsx', ignore_creation_edit_dates=False):
+def generate_mismatch_report(merged_df, output_file='weed_visits_field_comparison.xlsx', ignore_creation_edit_dates=False, visits_df=None):
   """
   Generate Excel spreadsheet with summary and detailed mismatch data
   
@@ -859,9 +889,13 @@ def generate_mismatch_report(merged_df, output_file='weed_visits_field_compariso
     merged_df: DataFrame with merged data
     output_file: Path to output Excel file
     ignore_creation_edit_dates: If True, skip audit fields (CreationDate_1 and EditDate_1)
+    visits_df: Full Visits_Table DataFrame; when provided, adds JIRA # column (SYS-403 rule) to per-location sheets
   """
+  working_df = merged_df.copy()
+  if visits_df is not None:
+    working_df = add_jira_sys403_column(working_df, visits_df)
   # Check field mismatches
-  result_df, mismatch_columns, active_rules = check_field_mismatches(merged_df, ignore_creation_edit_dates)
+  result_df, mismatch_columns, active_rules = check_field_mismatches(working_df, ignore_creation_edit_dates)
   
   # Calculate summary statistics
   total_locations = len(result_df)
@@ -930,6 +964,7 @@ def generate_mismatch_report(merged_df, output_file='weed_visits_field_compariso
   
   # Build detail columns from active rules
   detail_columns = [
+    'JIRA #',
     'WeedLocation_OBJECTID',
     'Visit_OBJECTID',
     'VisitDataSource',
@@ -982,6 +1017,7 @@ def generate_mismatch_report(merged_df, output_file='weed_visits_field_compariso
   ].copy()
   
   missing_date_columns = [
+    'JIRA #',
     'WeedLocation_OBJECTID', 'Visit_OBJECTID',
     'DateCheck', 'visit_CreationDate_1',
     'WeedVisitStatus', 'DifficultyChild',
@@ -1009,6 +1045,7 @@ def generate_mismatch_report(merged_df, output_file='weed_visits_field_compariso
   ].copy()
   
   missing_status_columns = [
+    'JIRA #',
     'WeedLocation_OBJECTID', 'Visit_OBJECTID',
     'WeedVisitStatus', 'ParentStatusWithDomain',
     'DateCheck', 'visit_CreationDate_1',
@@ -1746,7 +1783,7 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
   
   print("\nAnalyzing field mismatches...")
   overall_summary, field_summary, mismatches = generate_mismatch_report(
-    merged_df, output_file, ignore_creation_edit_dates
+    merged_df, output_file, ignore_creation_edit_dates, visits_df
   )
   
   # Apply corrections if requested
@@ -1812,7 +1849,7 @@ def analyze_weed_visits(environment, output_file=None, ignore_creation_edit_date
         post_correction_file = f'weed_visits_field_comparison_{environment}_after_corrections_{timestamp}.xlsx'
         print(f"\nGenerating post-correction analysis report...")
         overall_summary, field_summary, mismatches = generate_mismatch_report(
-          merged_df, post_correction_file, ignore_creation_edit_dates
+          merged_df, post_correction_file, ignore_creation_edit_dates, visits_df
         )
         print(f"Post-correction report saved to: {post_correction_file}")
   
