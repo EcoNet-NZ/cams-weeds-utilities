@@ -249,6 +249,9 @@ pip install -r requirements.txt
 For tool-specific issues, see the documentation in each tool's directory:
 - [Spatial Field Updater Documentation](spatial_field_updater/README.md)
 
+Related CAMS documentation:
+- [Creating CAMS features with Easy Editor](docs/easy-editor-create-features.md)
+
 For general repository issues, create a GitHub issue with:
 - Tool name and version
 - Environment (development/production)
