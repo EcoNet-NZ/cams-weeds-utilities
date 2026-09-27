@@ -1,3 +1,5 @@
+Superseded by REQUIREMENTS.md. This note describes the old status-to-purple rollover, which no longer runs.
+
 1. Purpose
 Automate the annual rollover of weed instance records, updating their status based on business rules, and generate a detailed log for each run.
 
