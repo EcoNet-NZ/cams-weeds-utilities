@@ -71,7 +71,7 @@ Fields can be updated by a number of systems, see the Source column of the follo
 
 | Display Name | Field Name | Type | Length | Nullable | Generation | Source | Constraints | Notes |
 |-------------|------------|------|--------|----------|------------|--------|-------------|--------|
-| (2a) Current Status | `ParentStatusWithDomain` | String | 100 | Yes | System | Child-to-parent updater, Annual rollover, Daily rollover, CAMS form, iNat to CAMS, EasyEditor | Domain values | Synchronized from latest visit status; updated to PurpleHistoric by annual rollover |
+| (2a) Current Status | `ParentStatusWithDomain` | String | 100 | Yes | System | Child-to-parent updater, Daily rollover, CAMS form, iNat to CAMS, EasyEditor | Domain values | Synchronized from latest visit status. Annual rollover does not change it |
 | (2b) Number of pods, seed heads etc removed | `NbrPodsRemoved` | Integer | - | Yes | User | CAMS form, EasyEditor | >= 0 | Count of reproductive structures |
 | (2c) How Treated | `HowTreated` | String | 255 | Yes | User | CAMS form, iNat to CAMS, EasyEditor | - | Treatment method description |
 | (2cx) Treated? (Obsolete field) | `Treated` | String | 50 | Yes | Deprecated? | iNat to CAMS, EasyEditor | - | Whether treatment was applied partially or fully |
@@ -137,7 +137,7 @@ Fields can be updated by a number of systems, see the Source column of the follo
 |-------------|------------|------|--------|----------|------------|--------|-------------|--------|
 | (5.1) Estimated effort (From Last Visit) | `Urgency` | Integer | - | Yes | System | Child-to-parent updater, EasyEditor | 1-5 scale | Formerly "Difficulty" |
 | (5.2) Date Visit Made (From Last Visit) | `DateVisitMadeFromLastVisit` | Date | - | Yes | System | Child-to-parent updater, EasyEditor | - | **KEY FIELD** - synced from visits |
-| (5.3) Date For Next Visit (From Last Visit) | `DateForNextVisitFromLastVisit` | Date | - | Yes | System | Child-to-parent updater, EasyEditor | - | Synced from visits |
+| (5.3) Date For Next Visit (From Last Visit) | `DateForNextVisitFromLastVisit` | Date | - | Yes | System | Child-to-parent updater, EasyEditor, Annual rollover | - | Synced from visits. Annual rollover fills it only when null |
 | (5.4) Latest Visit Step (From Last Visit) | `LatestVisitStage` | String | 100 | Yes | System | Child-to-parent updater | Domain values | Synced from visits |
 | (5.5) Latest Area M2 (From Last Visit) | `LatestArea` | Double | - | Yes | System | Child-to-parent updater, EasyEditor | >= 0 | Synced from visits |
 | (5.6) Date Of Last Create (From Last Visit) | `DateOfLastCreateFromLastVisit` | Date | - | Yes | System | Child-to-parent updater | - | Visit creation timestamp |
@@ -386,20 +386,19 @@ Critical synchronization process that propagates latest visit data to parent Wee
 
 ### 5. Annual Rollover
 
-Automated process that updates qualifying weed locations for annual re-checking. Runs annually on October 1st with production safeguards preventing early execution.
+One-off process that fills a missing next-visit date on listed weed instances. It does not change status. A date that is already set is left unchanged. A live production run is refused before 1 October. Later visits take their date from CAMS Easy Editor.
 
-**Target Records:**
+**Target records:**
 - 10 climbing/spreading species (MothPlant, OldMansBeard, CathedralBells, BananaPassionfruit, BluePassionFlower, Jasmine, JapaneseHoneysuckle, BlueMorningGlory, WoollyNightshade, Elaeagnus)
-- Yellow/Orange/Green/Pink statuses
-- Next visit due (≤ October 1st or null)
-- Time criteria: 2 months for Yellow/Orange, 2 years for Green/Pink
+- Yellow, orange, green, and pink statuses
 
-**Updates WeedLocations:**
-- `ParentStatusWithDomain` → 'PurpleHistoric' for eligible records
-- `StatusAt202510` → Backs up all current status values before rollover
-- `audit_log` → Appends rollover entry with date and previous status
+**Updates, only when the field is null:**
+- WeedLocations `DateForNextVisitFromLastVisit`
+- Latest visit `DateForReturnVisit`
 
-**Last Visit Resolution:** Uses coalesce of `DateVisitMadeFromLastVisit`, `DateOfLastCreateFromLastVisit`, `DateDiscovered`
+When one side is already set, that value is copied to the empty side. When both are empty, both receive a suggested 1 October (yellow/orange: same year before 1 August, otherwise next year; green/pink: next year before 1 October, otherwise two years later). A suggestion that is not after today moves forward a year at a time, and is skipped if it would be more than five years ahead.
+
+**Last visit resolution:** `DateVisitMadeFromLastVisit`, then `DateOfLastCreateFromLastVisit`, then `DateDiscovered`
 
 **Implementation:** `/annual_rollover/annual_rollover.py` with dry-run mode, retry logic, and Excel exports
 
@@ -473,7 +472,7 @@ Fields are numbered with a system like `(1.1)`, `(2a)`, `(3.2cXa)` which indicat
 
 - **`weed_visits_analyzer.py`**: Monitors synchronization between WeedLocations and Visits_Table, identifying discrepancies in the child-to-parent update process
 - **`spatial_field_updater.py`**: Automated process that updates RegionCode and DistrictCode fields using high-performance GeoPandas spatial operations
-- **`annual_rollover.py`**: Year-end process that updates qualifying weed instances to PurpleHistoric status for annual re-checking, with comprehensive backup and audit trail
+- **`annual_rollover.py`**: One-off fill of a missing next-visit date on listed weed instances. Does not change status
 
 ---
 
