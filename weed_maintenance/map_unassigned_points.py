@@ -18,11 +18,11 @@ def connect_arcgis():
     username = os.getenv('ARCGIS_USERNAME')
     password = os.getenv('ARCGIS_PASSWORD')
     portal_url = os.getenv('ARCGIS_PORTAL_URL', 'https://www.arcgis.com')
-    return GIS(portal_url, username, password)
+    return GIS(portal_url, username, password, verify_cert=True)
 
 def get_layers(gis, environment):
     """Get the layers for the specified environment"""
-    env_config_path = 'config/environment_config.json'
+    env_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "environment_config.json")
     with open(env_config_path, 'r') as f:
         env_config = json.load(f)
     

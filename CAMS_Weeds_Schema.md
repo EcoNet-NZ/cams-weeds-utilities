@@ -44,8 +44,8 @@ Fields can be updated by a number of systems, see the Source column of the follo
 | YYY-SaveContactDetails-Confidential | `SaveContactDetailsConfidential` | String | 255 | Yes | User | CAMS form? | - | Confidential contact saving flag |
 | Image URLs | `ImageURLs` | String | - | Yes | User/System | iNat to CAMS | - | Semicolon-separated image URLs |
 | Image Attribution | `ImageAttribution` | String | 255 | Yes | User/System | iNat to CAMS | - | Photo attribution text |
-| Region Code | `RegionCode` | String | 50 | Yes | User | spatial_field_updater | - | Administrative region identifier |
-| District Code | `DistrictCode` | String | 50 | Yes | User | spatial_field_updater | - | Administrative district identifier |
+| Region Code | `RegionCode` | String | 50 | Yes | User | weed_maintenance | - | Administrative region identifier |
+| District Code | `DistrictCode` | String | 50 | Yes | User | weed_maintenance | - | Administrative district identifier |
 | last_user_edit | `last_user_edit` | String | 255 | Yes | System | ? | - | Last user to edit |
 | last_user_edit_date | `last_user_edit_date` | Date | - | Yes | System | ? | - | Date of last user edit |
 
@@ -72,6 +72,7 @@ Fields can be updated by a number of systems, see the Source column of the follo
 | Display Name | Field Name | Type | Length | Nullable | Generation | Source | Constraints | Notes |
 |-------------|------------|------|--------|----------|------------|--------|-------------|--------|
 | (2a) Current Status | `ParentStatusWithDomain` | String | 100 | Yes | System | Child-to-parent updater, Daily rollover, CAMS form, iNat to CAMS, EasyEditor | Domain values | Synchronized from latest visit status. Annual rollover does not change it |
+| (2a-b) Effective status | `EffectiveStatus` | String | 100 | Yes | System | weed_maintenance | Domain values. `PurpleHistoric` displays as "Purple - please check" | Parent status, or `PurpleHistoric` when the next visit is due and the parent status does not start with Red, Black, or Grey. Not written back to the parent status |
 | (2b) Number of pods, seed heads etc removed | `NbrPodsRemoved` | Integer | - | Yes | User | CAMS form, EasyEditor | >= 0 | Count of reproductive structures |
 | (2c) How Treated | `HowTreated` | String | 255 | Yes | User | CAMS form, iNat to CAMS, EasyEditor | - | Treatment method description |
 | (2cx) Treated? (Obsolete field) | `Treated` | String | 50 | Yes | Deprecated? | iNat to CAMS, EasyEditor | - | Whether treatment was applied partially or fully |
@@ -402,13 +403,14 @@ When one side is already set, that value is copied to the empty side. When both 
 
 **Implementation:** `/annual_rollover/annual_rollover.py` with dry-run mode, retry logic, and Excel exports
 
-### 6. Spatial Field Updater
+### 6. Weed Maintenance
 
-High-performance automated process that pre-calculates region and district assignments to eliminate real-time spatial queries during dashboard filtering. Designed for daily processing of 54,000+ records in 10-15 minutes using GeoPandas bulk operations.
+Daily process that pre-calculates region and district assignments and sets effective status. Region and district assignment uses GeoPandas. Both changes are planned from one WeedLocations query and written once.
 
 **Updates WeedLocations:**
 - `RegionCode` ← 2-character region code (e.g., "02" for Auckland)
 - `DistrictCode` ← 5-character district code (e.g., "04101" for Far North)
+- `EffectiveStatus` ← `PurpleHistoric` when `DateForNextVisitFromLastVisit` is today or earlier in NZT and `ParentStatusWithDomain` does not start with Red, Black, or Grey. Otherwise the parent status code. `PurpleHistoric` displays as "Purple - please check".
 
 **Assignment Logic:**
 - Primary: Exact spatial intersection with boundary polygons
@@ -416,11 +418,11 @@ High-performance automated process that pre-calculates region and district assig
 - All layers use EPSG:2193 (NZTM) with geometry validation
 
 **Processing Modes:**
-- Incremental (default): Only records where `EditDate_1` > last run
-- Full (`--mode all`): Reprocess entire dataset
-- Change detection tracked in CAMS Process Audit table
+- Incremental (default): `EditDate_1` after the last run, plus next-visit dates that became due after that run
+- Full (`--mode all`): Reprocess entire dataset, including historical overdue sites
+- Change detection tracked in CAMS Process Audit table as `ProcessName = weed_maintenance`
 
-**Implementation:** `/spatial_field_updater/spatial_field_updater.py` with retry logic and smart field comparison
+**Implementation:** `/weed_maintenance/weed_maintenance.py` with retry logic and smart field comparison
 
 ---
 
@@ -471,7 +473,7 @@ Fields are numbered with a system like `(1.1)`, `(2a)`, `(3.2cXa)` which indicat
 ## Related Tools
 
 - **`weed_visits_analyzer.py`**: Monitors synchronization between WeedLocations and Visits_Table, identifying discrepancies in the child-to-parent update process
-- **`spatial_field_updater.py`**: Automated process that updates RegionCode and DistrictCode fields using high-performance GeoPandas spatial operations
+- **`weed_maintenance.py`**: Updates RegionCode, DistrictCode, and EffectiveStatus. Region and district codes come from a GeoPandas spatial join
 - **`annual_rollover.py`**: One-off fill of a missing next-visit date on listed weed instances. Does not change status
 
 ---

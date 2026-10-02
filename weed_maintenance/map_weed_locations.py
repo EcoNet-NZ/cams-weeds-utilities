@@ -18,11 +18,11 @@ def connect_arcgis():
     username = os.getenv('ARCGIS_USERNAME')
     password = os.getenv('ARCGIS_PASSWORD')
     portal_url = os.getenv('ARCGIS_PORTAL_URL', 'https://www.arcgis.com')
-    return GIS(portal_url, username, password)
+    return GIS(portal_url, username, password, verify_cert=True)
 
 def get_layers(gis, environment, layer_type='regions'):
     """Get the layers for the specified environment"""
-    env_config_path = 'config/environment_config.json'
+    env_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "environment_config.json")
     with open(env_config_path, 'r') as f:
         env_config = json.load(f)
     
@@ -164,7 +164,7 @@ def create_weed_location_map(environment='development', sample_size=None, layer_
             # We need to load regions to get districts within that region
             print(f"Loading region boundaries for district filtering...")
             # Reload config to get region layer ID
-            env_config_path = 'config/environment_config.json'
+            env_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "environment_config.json")
             with open(env_config_path, 'r') as f:
                 env_config_reload = json.load(f)
             region_layer_id = env_config_reload[environment]['region_layer_id']  

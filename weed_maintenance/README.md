@@ -1,4 +1,4 @@
-# CAMS Spatial Field Updater
+# CAMS Weed Maintenance
 
 ## Business Context
 
@@ -10,7 +10,7 @@ Dashboard users experience slow response times when filtering by region or distr
 
 ### Business Solution
 
-Automated daily preprocessing using high-performance GeoPandas to pre-calculate region and district assignments for all weed locations, eliminating real-time spatial lookups during dashboard interactions.
+Automated daily preprocessing using high-performance GeoPandas to pre-calculate region and district assignments for all weed locations, eliminating real-time spatial lookups during dashboard interactions. The same run sets `EffectiveStatus`.
 
 ## Quick Start
 
@@ -24,11 +24,29 @@ export ARCGIS_PASSWORD="your_password"
 export ARCGIS_PORTAL_URL="https://your-portal.arcgis.com"
 
 # Run spatial field updater (changed records only)
-python spatial_field_updater/spatial_field_updater.py --env development
+python weed_maintenance/weed_maintenance.py --env development
 
 # Run on all records
-python spatial_field_updater/spatial_field_updater.py --env development --mode all
+python weed_maintenance/weed_maintenance.py --env development --mode all
+
+# Backfill EffectiveStatus only. Region and district are skipped, and LastRunTimestamp stays put.
+python weed_maintenance/weed_maintenance.py --env production --mode all --actions status
 ```
+
+`EffectiveStatus` must already exist on WeedLocations. The script does not add the field.
+
+## Effective status
+
+`EffectiveStatus` is the status a map or filter should use.
+
+- When `DateForNextVisitFromLastVisit` is set, its NZT date is today or earlier, and `ParentStatusWithDomain` does not start with `Red`, `Black`, or `Grey`, the stored code is `PurpleHistoric`. The domain display name for that code is "Purple - please check".
+- Otherwise `EffectiveStatus` is `ParentStatusWithDomain`, including when that value is null.
+
+A normal run reads features edited since the last audit timestamp (`EditDate_1`), plus features whose next-visit date became due after that timestamp. Sites that were already overdue before the last run stay unchanged until `--mode all`.
+
+`--actions status` writes EffectiveStatus only. It does not move `LastRunTimestamp`, so the next full run still assigns region and district for weeds edited since the last spatial run.
+
+The scheduled workflow runs at 00:15 NZT and updates production. Development is a manual workflow run, or `python weed_maintenance/weed_maintenance.py --env development`.
 
 ## Business Requirements
 
@@ -41,6 +59,7 @@ python spatial_field_updater/spatial_field_updater.py --env development --mode a
 ### Data Requirements
 - **Region Assignment**: 2-character region codes stored in WeedLocations.RegionCode
 - **District Assignment**: 5-character district codes stored in WeedLocations.DistrictCode
+- **Effective status**: `EffectiveStatus` stores `PurpleHistoric` or the parent status code
 - **Layer Monitoring**: Track changes using EditDate_1 timestamps
 
 ### Operational Requirements
@@ -52,7 +71,7 @@ python spatial_field_updater/spatial_field_updater.py --env development --mode a
 
 ### Environment Configuration
 
-The script reads layer IDs from `spatial_field_updater/config/environment_config.json`:
+The script reads layer IDs from `weed_maintenance/config/environment_config.json`:
 
 ```json
 {
@@ -84,8 +103,8 @@ The script reads layer IDs from `spatial_field_updater/config/environment_config
 2. **Loads configuration** for the specified environment
 3. **Queries features** based on mode (all vs changed since last run)
 4. **Performs spatial analysis** to find intersecting region and district for each weed location
-5. **Updates fields** only when RegionCode or DistrictCode values actually change
-6. **Applies updates** in efficient batches of 100 features
+5. **Plans** region, district, and effective-status changes from that one result
+6. **Writes** the merged attributes once, in batches of 100, and only where a value changed
 7. **Saves timestamp** for future change detection
 
 ### Change Detection Logic
@@ -95,7 +114,7 @@ The script reads layer IDs from `spatial_field_updater/config/environment_config
 - Uses `EditDate_1 > last_run_timestamp` for incremental processing
 - Falls back to processing all features if no previous run found
 - Each environment (development, production) tracks timestamps independently using Environment field
-- ProcessName field identifies this specific utility ("spatial_field_updater")
+- ProcessName field identifies this utility ("weed_maintenance"). The first run copies LastRunTimestamp from a spatial_field_updater audit row for the same environment and leaves that old row in place.
 
 #### GitHub Workflow Integration
 - **Automated Runs**: Timestamps managed directly by the script via ArcGIS audit table
@@ -165,18 +184,18 @@ Current performance with GeoPandas:
 
 ## Scripts Overview
 
-### 📍 **spatial_field_updater.py** - Main Processing Script
+### weed_maintenance.py
 Fast, reliable spatial assignment using GeoPandas bulk operations.
 
 ```bash
 # Process changed records (default)
-python spatial_field_updater/spatial_field_updater.py --env development
+python weed_maintenance/weed_maintenance.py --env development
 
 # Process all records
-python spatial_field_updater/spatial_field_updater.py --env development --mode all
+python weed_maintenance/weed_maintenance.py --env development --mode all
 
 # Production environment
-python spatial_field_updater/spatial_field_updater.py --env production --mode changed
+python weed_maintenance/weed_maintenance.py --env production --mode changed
 ```
 
 ### 🗺️ **map_weed_locations.py** - Visualization & Analysis
@@ -184,13 +203,13 @@ Create detailed maps showing spatial distribution and assignments.
 
 ```bash
 # Region map of New Zealand
-python spatial_field_updater/map_weed_locations.py --env development --layer regions
+python weed_maintenance/map_weed_locations.py --env development --layer regions
 
 # District map zoomed to Auckland
-python spatial_field_updater/map_weed_locations.py --env development --layer districts --zoom 02
+python weed_maintenance/map_weed_locations.py --env development --layer districts --zoom 02
 
 # Sample for testing
-python spatial_field_updater/map_weed_locations.py --env development --sample 5000
+python weed_maintenance/map_weed_locations.py --env development --sample 5000
 ```
 
 ### 🔍 **map_unassigned_points.py** - Problem Analysis
@@ -198,7 +217,7 @@ Identify and visualize locations that couldn't be assigned.
 
 ```bash
 # Show unassigned points with large markers
-python spatial_field_updater/map_unassigned_points.py --env development
+python weed_maintenance/map_unassigned_points.py --env development
 ```
 
 ## Technical Architecture
@@ -237,7 +256,7 @@ where_clause = f"EditDate_1 > timestamp '{last_run}'" if last_run else "1=1"
 
 ### Environment Configuration
 
-Configure layer IDs in `spatial_field_updater/config/environment_config.json`:
+Configure layer IDs in `weed_maintenance/config/environment_config.json`:
 
 ```json
 {
@@ -403,32 +422,32 @@ pandas>=1.3.0          # Data manipulation
 **No features to process**
 ```bash
 # Check if there are actually changed records
-python spatial_field_updater/map_unassigned_points.py --env development
+python weed_maintenance/map_unassigned_points.py --env development
 ```
 
 **Slow performance**
 ```bash  
 # Use sample for testing
-python spatial_field_updater/spatial_field_updater.py --env development --mode all --sample 1000
+python weed_maintenance/weed_maintenance.py --env development --mode all
 ```
 
 **Assignment failures**
 ```bash
 # Check unassigned locations
-python spatial_field_updater/map_unassigned_points.py --env development
+python weed_maintenance/map_unassigned_points.py --env development
 ```
 
 ### Debug Commands
 
 ```bash
 # Force full reprocessing
-python spatial_field_updater/spatial_field_updater.py --env development --mode all
+python weed_maintenance/weed_maintenance.py --env development --mode all
 
 # Check assignment distribution  
-python spatial_field_updater/map_weed_locations.py --env development --sample 5000
+python weed_maintenance/map_weed_locations.py --env development --sample 5000
 
 # Analyze problematic locations
-python spatial_field_updater/map_unassigned_points.py --env development
+python weed_maintenance/map_unassigned_points.py --env development
 ```
 
 ## Future Enhancements

@@ -1,130 +1,8 @@
-#!/usr/bin/env python3
-"""
-GeoPandas-based Spatial Field Updater - much faster for bulk spatial operations.
-Uses GeoPandas and Shapely for efficient spatial joins.
-"""
+"""Spatial region and district assignment for weed locations."""
 
-import os
-import json
-import argparse
-from datetime import datetime
-from tenacity import retry, stop_after_attempt, wait_fixed
-from arcgis.gis import GIS
-from arcgis.features import FeatureLayer, Table
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point
-
-# Configuration - timestamps now stored in ArcGIS audit table
-
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
-def connect_arcgis():
-    username = os.getenv('ARCGIS_USERNAME')
-    password = os.getenv('ARCGIS_PASSWORD')
-    portal_url = os.getenv('ARCGIS_PORTAL_URL', 'https://www.arcgis.com')
-    return GIS(portal_url, username, password)
-
-def get_layers(gis, environment):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    env_config_path = os.path.join(script_dir, 'config', 'environment_config.json')
-    with open(env_config_path, 'r') as f:
-        env_config = json.load(f)
-    
-    if environment not in env_config:
-        available_envs = list(env_config.keys())
-        raise ValueError(f"Environment '{environment}' not found. Available: {available_envs}")
-    
-    env_settings = env_config[environment]
-    weed_layer_id = env_settings['weed_locations_layer_id']
-    region_layer_id = env_settings['region_layer_id']
-    district_layer_id = env_settings['district_layer_id']
-    audit_table_id = env_settings['audit_table_id']
-    
-    weed_layer = FeatureLayer.fromitem(gis.content.get(weed_layer_id))
-    region_layer = FeatureLayer.fromitem(gis.content.get(region_layer_id))
-    district_layer = FeatureLayer.fromitem(gis.content.get(district_layer_id))
-    audit_table = Table.fromitem(gis.content.get(audit_table_id))
-    
-    return weed_layer, region_layer, district_layer, audit_table
-
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
-def get_last_run_date(gis, environment):
-    """Get the last run date from audit table, return None if not found"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        env_config_path = os.path.join(script_dir, 'config', 'environment_config.json')
-        with open(env_config_path, 'r') as f:
-            env_config = json.load(f)
-        
-        audit_table_id = env_config[environment]['audit_table_id']
-        audit_table = Table.fromitem(gis.content.get(audit_table_id))
-        
-        # Query for this process and environment
-        where_clause = f"ProcessName = 'spatial_field_updater' AND Environment = '{environment}'"
-        result = audit_table.query(where=where_clause, return_all_records=False)
-        
-        if result.features:
-            timestamp_ms = result.features[0].attributes['LastRunTimestamp']
-            # ArcGIS DateTime fields return milliseconds since epoch
-            return datetime.fromtimestamp(timestamp_ms / 1000)
-    except Exception as e:
-        print(f"Warning: Could not get last run date from audit table: {e}")
-    return None
-
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
-def save_last_run_date(gis, environment):
-    """Save current datetime as last run date for the specified environment in audit table"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        env_config_path = os.path.join(script_dir, 'config', 'environment_config.json')
-        with open(env_config_path, 'r') as f:
-            env_config = json.load(f)
-        
-        audit_table_id = env_config[environment]['audit_table_id']
-        audit_table = Table.fromitem(gis.content.get(audit_table_id))
-        
-        # Check if record exists
-        where_clause = f"ProcessName = 'spatial_field_updater' AND Environment = '{environment}'"
-        existing = audit_table.query(where=where_clause, return_all_records=False)
-        
-        timestamp = datetime.now().isoformat()
-        
-        if existing.features:
-            # Update existing record
-            objectid = existing.features[0].attributes['OBJECTID']
-            audit_table.edit_features(updates=[{
-                'attributes': {
-                    'OBJECTID': objectid,
-                    'LastRunTimestamp': timestamp
-                }
-            }])
-            print(f"Updated last run timestamp for {environment} environment")
-        else:
-            # Insert new record
-            audit_table.edit_features(adds=[{
-                'attributes': {
-                    'ProcessName': 'spatial_field_updater',
-                    'Environment': environment,
-                    'LastRunTimestamp': timestamp
-                }
-            }])
-            print(f"Created new audit record for {environment} environment")
-    except Exception as e:
-        print(f"Warning: Could not save last run date to audit table for {environment}: {e}")
-
-def build_where_clause(gis, environment, process_all):
-    """Build WHERE clause for querying features"""
-    if process_all:
-        return "1=1"  # All features
-    
-    last_run = get_last_run_date(gis, environment)
-    if not last_run:
-        print("No previous run found, processing all features")
-        return "1=1"
-    
-    # Format for ArcGIS SQL
-    last_run_str = last_run.strftime('%Y-%m-%d %H:%M:%S')
-    return f"EditDate_1 > timestamp '{last_run_str}'"
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 def arcgis_to_geopandas(feature_set, geometry_col='SHAPE'):
     """Convert ArcGIS FeatureSet to GeoPandas DataFrame with geometry validation"""
@@ -346,121 +224,24 @@ def spatial_join_bulk(weeds_gdf, regions_gdf, districts_gdf):
     
     return weeds_with_all[result_cols]
 
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
-def update_batch(weed_layer, batch):
-    result = weed_layer.edit_features(updates=batch)
-    if result and 'updateResults' in result:
-        return sum(1 for r in result['updateResults'] if r.get('success'))
-    return 0
+def plan_spatial_updates(feature_set, region_layer, district_layer):
+    """Region and district changes for the features already loaded by the pipeline."""
+    if not feature_set.features:
+        return {}
 
-def update_spatial_codes_geopandas(environment, process_all=True):
-    print(f"Starting GeoPandas spatial update on '{environment}' ({'all features' if process_all else 'changed features only'})...")
-    
-    gis = connect_arcgis()
-    weed_layer, region_layer, district_layer, audit_table = get_layers(gis, environment)
-    
-    # Build query to get features
-    where_clause = build_where_clause(gis, environment, process_all)
-    print(f"Query: {where_clause}")
-    
-    # Get weed locations
-    print("Loading weed locations...")
-    weed_features = weed_layer.query(
-        where=where_clause,
-        out_fields=["OBJECTID", "GlobalID", "RegionCode", "DistrictCode", "EditDate_1"],
-        return_geometry=True
-    )
-    
-    print(f"Processing {len(weed_features.features)} weed locations...")
-    
-    if len(weed_features.features) == 0:
-        print("No features to process")
-        # Still save timestamp - we ran and checked for changes
-        save_last_run_date(gis, environment)
-        return
-    
-    # Convert to GeoPandas
     print("Converting to GeoPandas...")
-    weeds_gdf = arcgis_to_geopandas(weed_features)
-    
-    # Load boundaries as GeoPandas
+    weeds_gdf = arcgis_to_geopandas(feature_set)
     regions_gdf, districts_gdf = load_boundaries_as_geopandas(region_layer, district_layer)
-    
-    # Perform bulk spatial join - THIS IS THE MAGIC!
     results_df = spatial_join_bulk(weeds_gdf, regions_gdf, districts_gdf)
-    
-    # Find features that need updates
-    print("Identifying features needing updates...")
-    updates = []
-    
-    for idx, row in results_df.iterrows():
-        updated = False
-        feature_dict = {
-            'attributes': {
-                'OBJECTID': row['OBJECTID']
-            }
-        }
-        
-        # Check if region code changed
-        if (pd.notna(row.get('RegionCode_new')) and 
-            row.get('RegionCode_new') != row.get('RegionCode')):
-            feature_dict['attributes']['RegionCode'] = row['RegionCode_new']
-            updated = True
-            
-        # Check if district code changed  
-        if (pd.notna(row.get('DistrictCode_new')) and 
-            row.get('DistrictCode_new') != row.get('DistrictCode')):
-            feature_dict['attributes']['DistrictCode'] = row['DistrictCode_new']
-            updated = True
-        
-        if updated:
-            updates.append(feature_dict)
-    
-    print(f"Found {len(updates)} features needing updates")
-    
-    if len(updates) == 0:
-        print("No updates needed")
-    else:
-        # Apply updates in batches
-        batch_size = 100
-        total_updated = 0
-        
-        for i in range(0, len(updates), batch_size):
-            batch = updates[i:i + batch_size]
-            
-            try:
-                successful = update_batch(weed_layer, batch)
-                total_updated += successful
-                print(f"Updated batch {i//batch_size + 1}: {successful}/{len(batch)} successful")
-            except Exception as e:
-                print(f"Batch update failed after retries: {e}")
-        
-        print(f"Completed: {total_updated} features updated successfully")
-    
-    # Always save timestamp when process completes successfully
-    # (represents "when we last checked" not "when we last changed")
-    save_last_run_date(gis, environment)
 
-def main():
-    parser = argparse.ArgumentParser(description="Update spatial codes using GeoPandas (FAST!)")
-    parser.add_argument(
-        '--mode', 
-        choices=['all', 'changed'], 
-        default='changed',
-        help='Process all features or only changed ones (default: changed)'
-    )
-    parser.add_argument(
-        '--env',
-        '--environment',
-        dest='environment',
-        required=True,
-        help='Environment to use (e.g., development, staging, production)'
-    )
-    
-    args = parser.parse_args()
-    process_all = (args.mode == 'all')
-    
-    update_spatial_codes_geopandas(args.environment, process_all)
-
-if __name__ == "__main__":
-    main() 
+    print("Identifying features needing spatial updates...")
+    updates = {}
+    for _, row in results_df.iterrows():
+        attributes = {}
+        if pd.notna(row.get("RegionCode_new")) and row.get("RegionCode_new") != row.get("RegionCode"):
+            attributes["RegionCode"] = row["RegionCode_new"]
+        if pd.notna(row.get("DistrictCode_new")) and row.get("DistrictCode_new") != row.get("DistrictCode"):
+            attributes["DistrictCode"] = row["DistrictCode_new"]
+        if attributes:
+            updates[int(row["OBJECTID"])] = attributes
+    return updates

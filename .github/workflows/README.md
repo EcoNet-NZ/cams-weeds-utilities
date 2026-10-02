@@ -2,13 +2,13 @@
 
 This directory contains automated workflows for the CAMS Utilities project.
 
-## 🔄 Spatial Field Updater Workflow
+## Weed Maintenance Workflow
 
-The `spatial-field-updater.yml` workflow provides automated daily processing of weed location spatial assignments.
+The `weed-maintenance.yml` workflow updates WeedLocations region, district, and effective status.
 
 ### 🎯 Features
 
-- **🕰️ Scheduled Runs**: Daily execution at 6 AM UTC (7-8 PM NZ time) on production environment
+- **Scheduled Runs**: Daily at 00:15 NZT on production. The clock time stays fixed across daylight saving.
 - **⚡ Manual Triggers**: On-demand execution with configurable options
 - **🌍 Environment Selection**: Choose development or production environment
 - **📊 Processing Modes**: Changed records (incremental) or full dataset processing
@@ -34,28 +34,29 @@ Add the following secrets to your repository (`Settings` → `Secrets and variab
 
 #### 2. Environment Configuration
 
-Ensure your `spatial_field_updater/config/environment_config.json` contains the required layer IDs for each environment. See the [spatial field updater configuration documentation](../spatial_field_updater/README.md#configuration) for details.
+Ensure your `weed_maintenance/config/environment_config.json` contains the required layer IDs for each environment. See the [weed maintenance configuration documentation](../weed_maintenance/README.md#configuration) for details. `EffectiveStatus` must exist on WeedLocations before the job writes.
 
 ### 🚀 Usage
 
 #### Scheduled Execution
-The workflow runs automatically daily at 6 AM UTC (7-8 PM NZ time) on the `production` environment using the `changed` mode (incremental processing).
+The workflow runs automatically daily at 00:15 NZT on the `production` environment using the `changed` mode (incremental processing). It does not update development.
 
 #### Manual Execution
-Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
+Go to `Actions` → `CAMS Weed Maintenance` → `Run workflow`
 
 **Options:**
 - **Environment**: Choose `development` or `production`
-- **Processing Mode**: 
-  - `changed` - Only process records modified since last run (recommended)
-  - `all` - Process all records (use for testing or data refresh)
-- **Sample Size**: Specify a number to process only a subset (for testing)
+- **Processing Mode**:
+  - `changed` - Records edited since the last run, plus visits that became due after that run
+  - `all` - Every record, including historical overdue sites
+
+Use environment `development` to update the development layer. The nightly schedule does not.
 
 ### 📊 Workflow Steps
 
 1. **🏗️ Setup**: Checkout code, install Python, install dependencies
 2. **🔧 Configure**: Set environment variables and credentials
-3. **🎯 Process**: Run the spatial field updater script (handles timestamp management internally)
+3. **Process**: Run weed maintenance (handles timestamp management internally)
 4. **📊 Summary**: Generate processing statistics
 
 ### 💾 State Storage
@@ -84,7 +85,7 @@ Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
 #### Common Issues
 
 **"Environment not found in configuration"**
-- Verify `spatial_field_updater/config/environment_config.json` contains the specified environment
+- Verify `weed_maintenance/config/environment_config.json` contains the specified environment
 - Check that all required layer IDs are present
 
 **"Authentication failed"**
@@ -103,12 +104,12 @@ Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
 **Timestamp/State Issues**
 - Timestamps are stored in the "CAMS Process Audit" ArcGIS table
 - Each environment (dev/prod) maintains separate audit records
-- ProcessName field identifies the specific utility ("spatial_field_updater")
+- ProcessName field identifies this utility ("weed_maintenance"). The first run copies the timestamp from "spatial_field_updater" for that environment.
 
 #### Debugging Steps
 
 1. **Review Logs**: Check detailed logs in the workflow run page
-2. **Test Manually**: Use `workflow_dispatch` with sample size for testing
+2. **Test Manually**: Use `workflow_dispatch` with environment `development` and mode `changed`
 3. **Check Permissions**: Ensure service account has edit permissions on target layers
 4. **Check Summary**: Review workflow summary for processing statistics
 

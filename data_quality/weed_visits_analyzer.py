@@ -384,7 +384,7 @@ def connect_arcgis():
   username = os.getenv('ARCGIS_USERNAME')
   password = os.getenv('ARCGIS_PASSWORD')
   portal_url = os.getenv('ARCGIS_PORTAL_URL', 'https://www.arcgis.com')
-  return GIS(portal_url, username, password)
+  return GIS(portal_url, username, password, verify_cert=True)
 
 
 def get_layers(gis, environment):

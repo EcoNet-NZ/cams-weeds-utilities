@@ -6,7 +6,7 @@ After this run, CAMS Easy Editor applies the same October rules when a visit is 
 
 ## Configuration
 
-- Layer: `weed_locations_layer_id` in `spatial_field_updater/config/environment_config.json`
+- Layer: `weed_locations_layer_id` in `weed_maintenance/config/environment_config.json`
 - Visits table: the related table on that feature service whose name contains "visit"
 - Environments: `development` or `production`
 - Credentials: `ARCGIS_USERNAME`, `ARCGIS_PASSWORD`, optional `ARCGIS_PORTAL_URL`
