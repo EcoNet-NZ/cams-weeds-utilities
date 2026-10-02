@@ -1,11 +1,11 @@
-name: CAMS Spatial Field Updater
+name: CAMS Weed Maintenance
 
 on:
-  # Scheduled daily run at 6 AM UTC (7 PM NZ Standard Time, 8 PM NZ Daylight Time)
   schedule:
-    - cron: '0 6 * * *'
-  
-  # Manual trigger with configurable options
+    - cron: '15 0 * * *'
+      # NZT. GitHub Actions needs the IANA name so daylight saving stays correct.
+      timezone: Pacific/Auckland
+
   workflow_dispatch:
     inputs:
       environment:
@@ -16,7 +16,7 @@ on:
         options:
         - development
         - production
-      
+
       processing_mode:
         description: 'Processing mode'
         required: true
@@ -25,44 +25,38 @@ on:
         options:
         - changed
         - all
-      
-      sample_size:
-        description: 'Sample size for testing (leave empty for all records)'
-        required: false
-        type: string
 
 env:
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.14'
 
 jobs:
-  spatial-field-update:
-    name: Update Spatial Fields
+  weed-maintenance:
+    name: Update WeedLocations
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     steps:
-      - name: 🏗️ Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-      
-      - name: 📦 Install Dependencies
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
-      - name: 🔧 Configure
+
+      - name: Configure
         run: |
           ENV=${{ github.event_name == 'schedule' && 'production' || github.event.inputs.environment }}
           echo "ENVIRONMENT=$ENV" >> $GITHUB_ENV
           echo "PROCESSING_MODE=${{ github.event.inputs.processing_mode || 'changed' }}" >> $GITHUB_ENV
-          echo "SAMPLE_SIZE=${{ github.event.inputs.sample_size || '' }}" >> $GITHUB_ENV
-      
-      - name: 🌍 Credentials
+
+      - name: Credentials
         env:
           ARCGIS_USERNAME: ${{ env.ENVIRONMENT == 'production' && secrets.ARCGIS_USERNAME_PROD || secrets.ARCGIS_USERNAME_DEV }}
           ARCGIS_PASSWORD: ${{ env.ENVIRONMENT == 'production' && secrets.ARCGIS_PASSWORD_PROD || secrets.ARCGIS_PASSWORD_DEV }}
@@ -71,54 +65,60 @@ jobs:
           echo "ARCGIS_USERNAME=${ARCGIS_USERNAME}" >> $GITHUB_ENV
           echo "ARCGIS_PASSWORD=${ARCGIS_PASSWORD}" >> $GITHUB_ENV
           echo "ARCGIS_PORTAL_URL=${ARCGIS_PORTAL_URL}" >> $GITHUB_ENV
-      
 
-      - name: 🎯 Process
-        id: spatial_update
+      - name: Process
+        id: weed_maintenance
         run: |
-          cd spatial_field_updater
-          
+          set -o pipefail
+          cd weed_maintenance
+
           ARGS="--environment ${{ env.ENVIRONMENT }}"
           [ "${{ env.PROCESSING_MODE }}" = "all" ] && ARGS="$ARGS --mode all"
-          [ -n "${{ env.SAMPLE_SIZE }}" ] && ARGS="$ARGS --sample-size ${{ env.SAMPLE_SIZE }}"
-          
-          OUTPUT=$(python spatial_field_updater.py $ARGS 2>&1 | tee /dev/stderr)
-          
+
+          OUTPUT=$(python weed_maintenance.py $ARGS 2>&1 | tee /dev/stderr)
+
           UPDATED_COUNT=$(echo "$OUTPUT" | grep -o "Applied [0-9]* updates" | grep -o "[0-9]*" || echo "0")
+          STATUS_COUNT=$(echo "$OUTPUT" | grep -o "Effective status updates: [0-9]*" | grep -o "[0-9]*" || echo "0")
+          SPATIAL_COUNT=$(echo "$OUTPUT" | grep -o "Spatial updates: [0-9]*" | grep -o "[0-9]*" || echo "0")
           UNASSIGNED_REGION=$(echo "$OUTPUT" | grep -o "[0-9]* points remain unassigned.*region" | grep -o "^[0-9]*" || echo "0")
           UNASSIGNED_DISTRICT=$(echo "$OUTPUT" | grep -o "[0-9]* points remain unassigned.*district" | grep -o "^[0-9]*" || echo "0")
           TOTAL_PROCESSED=$(echo "$OUTPUT" | grep -o "Processing [0-9]* weed locations" | grep -o "[0-9]*" || echo "0")
-          
+
           echo "success=true" >> $GITHUB_OUTPUT
           echo "updated_count=$UPDATED_COUNT" >> $GITHUB_OUTPUT
+          echo "status_count=$STATUS_COUNT" >> $GITHUB_OUTPUT
+          echo "spatial_count=$SPATIAL_COUNT" >> $GITHUB_OUTPUT
           echo "unassigned_region=$UNASSIGNED_REGION" >> $GITHUB_OUTPUT
           echo "unassigned_district=$UNASSIGNED_DISTRICT" >> $GITHUB_OUTPUT
           echo "total_processed=$TOTAL_PROCESSED" >> $GITHUB_OUTPUT
-          
+
           echo "UPDATED_COUNT=$UPDATED_COUNT" >> $GITHUB_ENV
+          echo "STATUS_COUNT=$STATUS_COUNT" >> $GITHUB_ENV
+          echo "SPATIAL_COUNT=$SPATIAL_COUNT" >> $GITHUB_ENV
           echo "UNASSIGNED_REGION=$UNASSIGNED_REGION" >> $GITHUB_ENV
           echo "UNASSIGNED_DISTRICT=$UNASSIGNED_DISTRICT" >> $GITHUB_ENV
           echo "TOTAL_PROCESSED=$TOTAL_PROCESSED" >> $GITHUB_ENV
-      
 
-      - name: 📊 Summary
+      - name: Summary
         if: always()
         run: |
-          if [ "${{ steps.spatial_update.outputs.success }}" = "true" ]; then
-            STATUS="✅ Success"
+          if [ "${{ steps.weed_maintenance.outputs.success }}" = "true" ]; then
+            STATUS="Success"
           else
-            STATUS="❌ Failed"
+            STATUS="Failed"
           fi
-          
+
           cat >> $GITHUB_STEP_SUMMARY << EOF
-          # 📍 CAMS Spatial Field Updater
-          
+          # CAMS Weed Maintenance
+
           **Status**: $STATUS | **Environment**: ${{ env.ENVIRONMENT }} | **Mode**: ${{ env.PROCESSING_MODE }}
-          
+
           | Metric | Count |
           |--------|--------|
-          | 📍 Total Processed | ${{ env.TOTAL_PROCESSED }} |
-          | ✏️ Records Updated | ${{ env.UPDATED_COUNT }} |
-          | ⚠️ Unassigned (Region) | ${{ env.UNASSIGNED_REGION }} |
-          | ⚠️ Unassigned (District) | ${{ env.UNASSIGNED_DISTRICT }} |
+          | Total processed | ${{ env.TOTAL_PROCESSED }} |
+          | Records updated | ${{ env.UPDATED_COUNT }} |
+          | Effective status changes | ${{ env.STATUS_COUNT }} |
+          | Spatial changes | ${{ env.SPATIAL_COUNT }} |
+          | Unassigned (region) | ${{ env.UNASSIGNED_REGION }} |
+          | Unassigned (district) | ${{ env.UNASSIGNED_DISTRICT }} |
           EOF

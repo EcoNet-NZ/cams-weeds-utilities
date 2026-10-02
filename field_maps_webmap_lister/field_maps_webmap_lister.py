@@ -832,7 +832,7 @@ def main():
     try:
         # Connect to ArcGIS Online
         print(f"Connecting to {portal_url}...")
-        gis = GIS(portal_url, username, password)
+        gis = GIS(portal_url, username, password, verify_cert=True)
         print(f"Connected as: {gis.properties.user.username}")
         
         # Initialize analyzer

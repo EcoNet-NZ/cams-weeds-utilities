@@ -8,39 +8,35 @@ This repository contains automated processing tools designed to enhance the perf
 
 ## Available Tools
 
-### 🗺️ [Spatial Field Updater](spatial_field_updater/)
+### [Weed Maintenance](weed_maintenance/)
 
-High-performance automated preprocessing tool for spatial field assignment in weed location data.
+Daily update of weed location region, district, and effective status. One query, one write.
 
-**Purpose**: Eliminates real-time spatial queries during dashboard filtering by pre-calculating region and district assignments.
+**Purpose**: Pre-calculate region and district assignments, and set `EffectiveStatus` to `PurpleHistoric` when a next visit is due.
 
 **Key Features**:
-- 🚀 GeoPandas bulk spatial processing (2-5x faster)
-- 🎯 99.98% assignment success rate with 2km nearest boundary fallback
-- 📊 Advanced visualization and analysis tools
-- ⚡ Intelligent change detection for incremental updates
-- 🔒 No ArcGIS credits consumed for spatial operations
+- GeoPandas bulk spatial processing
+- Effective status from the parent status and the next-visit date
+- Incremental reads using `EditDate_1`, plus visits that became due since the last run
+- No ArcGIS credits consumed for spatial operations
 
 **Quick Start**:
 ```bash
-# Install dependencies
 pip install -r requirements.txt
 
-# Set up environment
 export ARCGIS_USERNAME="your_username"
 export ARCGIS_PASSWORD="your_password"
 export ARCGIS_PORTAL_URL="https://your-portal.arcgis.com"
 
-# Run spatial field updater
-python spatial_field_updater/spatial_field_updater.py --env development
+python weed_maintenance/weed_maintenance.py --env development
 ```
 
 **Included Tools**:
-- **spatial_field_updater.py**: Automated region/district assignment
+- **weed_maintenance.py**: Region, district, and effective status
 - **map_weed_locations.py**: Visualization tool for weed location mapping
 - **map_unassigned_points.py**: Identifies and maps unassigned locations
 
-**📚 [View detailed documentation →](spatial_field_updater/README.md)**
+**[View detailed documentation →](weed_maintenance/README.md)**
 
 ---
 
@@ -112,12 +108,12 @@ python data_quality/weed_visits_analyzer.py --env development
 
 ## 🔄 Automated Workflows (GitHub Actions)
 
-### Spatial Field Updater Automation
+### Weed Maintenance Automation
 
-The spatial field updater includes a comprehensive GitHub Actions workflow for automated daily processing.
+Weed maintenance runs from a GitHub Actions workflow. The scheduled run updates production. Development is a manual run.
 
 **Features**:
-- 🕰️ **Scheduled Daily Runs**: Automatic execution at 6 AM UTC (7-8 PM NZ time) on production environment
+- **Scheduled Daily Runs**: Automatic execution at 00:15 NZT on production
 - ⚡ **Manual Triggers**: On-demand execution with configurable options for any environment
 - 🌍 **Environment Selection**: Choose development or production environment
 - 📊 **Processing Modes**: Incremental (changed records) or full dataset
@@ -127,12 +123,12 @@ The spatial field updater includes a comprehensive GitHub Actions workflow for a
 
 **Quick Setup**:
 1. **Configure GitHub Secrets**: Add ArcGIS credentials for dev/prod environments
-2. **Validate Configuration**: Ensure `spatial_field_updater/config/environment_config.json` has required layer IDs
-3. **Enable Workflow**: The workflow runs automatically or can be triggered manually
+2. **Validate Configuration**: Ensure `weed_maintenance/config/environment_config.json` has required layer IDs
+3. **Enable Workflow**: The scheduled run updates production. Development is a manual run.
 
-**Manual Execution**: Go to `Actions` → `CAMS Spatial Field Updater` → `Run workflow`
+**Manual Execution**: Go to `Actions` → `CAMS Weed Maintenance` → `Run workflow`
 
-**📚 [View workflow documentation →](.github/workflows/README.md)**
+**[View workflow documentation →](.github/workflows/README.md)**
 
 ---
 
@@ -142,13 +138,13 @@ The spatial field updater includes a comprehensive GitHub Actions workflow for a
 cams-utilities/
 ├── .github/
 │   └── workflows/                       # GitHub Actions automation
-│       ├── spatial-field-updater.yml   # Daily spatial processing workflow
+│       ├── weed-maintenance.yml        # Daily WeedLocations maintenance
 │       └── README.md                    # Workflow documentation
-├── spatial_field_updater/              # Spatial field assignment tool
+├── weed_maintenance/                   # Region, district, and effective status
 │   ├── config/
 │   │   └── environment_config.json     # Environment configurations
 │   ├── README.md                        # Complete documentation
-│   ├── spatial_field_updater.py         # Main processing script
+│   ├── weed_maintenance.py              # Main processing script
 │   ├── map_weed_locations.py           # Visualization tool
 │   └── map_unassigned_points.py        # Analysis tool
 ├── field_maps_webmap_lister/           # Field Maps web map discovery tool
@@ -184,7 +180,7 @@ cams-utilities/
 
 ### Environment Configuration
 
-The spatial field updater requires environment-specific layer IDs configured in `spatial_field_updater/config/environment_config.json`. See the [spatial field updater documentation](spatial_field_updater/README.md#configuration) for details.
+Weed maintenance requires environment-specific layer IDs configured in `weed_maintenance/config/environment_config.json`. See the [weed maintenance documentation](weed_maintenance/README.md#configuration) for details.
 
 ### Environment Variables
 
@@ -247,7 +243,7 @@ pip install -r requirements.txt
 ## Support
 
 For tool-specific issues, see the documentation in each tool's directory:
-- [Spatial Field Updater Documentation](spatial_field_updater/README.md)
+- [Weed Maintenance Documentation](weed_maintenance/README.md)
 
 Related CAMS documentation:
 - [Creating CAMS features with Easy Editor](docs/easy-editor-create-features.md)

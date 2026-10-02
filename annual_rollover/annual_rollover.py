@@ -59,12 +59,12 @@ def connect_arcgis():
   password = os.getenv("ARCGIS_PASSWORD")
   portal_url = os.getenv("ARCGIS_PORTAL_URL", "https://www.arcgis.com")
   print(f"Connecting to ArcGIS Online with username: {username} and portal_url: {portal_url}")
-  return GIS(portal_url, username, password)
+  return GIS(portal_url, username, password, verify_cert=True)
 
 
 def environment_settings(environment):
   script_dir = os.path.dirname(os.path.abspath(__file__))
-  env_config_path = os.path.join(script_dir, "..", "spatial_field_updater", "config", "environment_config.json")
+  env_config_path = os.path.join(script_dir, "..", "weed_maintenance", "config", "environment_config.json")
   with open(env_config_path, "r", encoding="utf-8") as handle:
     env_config = json.load(handle)
   if environment not in env_config:
