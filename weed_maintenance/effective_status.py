@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 NZT = ZoneInfo("Pacific/Auckland")
 OVERDUE_CODE = "PurpleHistoric"
-EXCLUDED_PREFIXES = ("Red", "Black", "Grey")
+EXCLUDED_PREFIXES = ("Red", "Black", "Gray")
 STATUS_FIELD = "EffectiveStatus"
 
 

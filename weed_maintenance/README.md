@@ -39,7 +39,7 @@ python weed_maintenance/weed_maintenance.py --env production --mode all --action
 
 `EffectiveStatus` is the status a map or filter should use.
 
-- When `DateForNextVisitFromLastVisit` is set, its NZT date is today or earlier, and `ParentStatusWithDomain` does not start with `Red`, `Black`, or `Grey`, the stored code is `PurpleHistoric`. The domain display name for that code is "Purple - please check".
+- When `DateForNextVisitFromLastVisit` is set, its NZT date is today or earlier, and `ParentStatusWithDomain` does not start with `Red`, `Black`, or `Gray`, the stored code is `PurpleHistoric`. The domain display name for that code is "Purple - please check".
 - Otherwise `EffectiveStatus` is `ParentStatusWithDomain`, including when that value is null.
 
 A normal run reads features edited since the last audit timestamp (`EditDate_1`), plus features whose next-visit date became due after that timestamp. Sites that were already overdue before the last run stay unchanged until `--mode all`.

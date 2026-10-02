@@ -55,7 +55,7 @@ class EffectiveStatusTests(unittest.TestCase):
 
   def test_excluded_prefixes_stay_on_parent_status_when_overdue(self):
     overdue = epoch_ms(2026, 10, 2)
-    for parent in ("RedActive", "BlackGone", "GreyArchived"):
+    for parent in ("RedActive", "BlackGone", "GrayDuplicate"):
       self.assertEqual(effective_status(parent, overdue, TODAY), parent)
 
   def test_null_parent_with_overdue_date_becomes_purple_historic(self):
@@ -107,7 +107,7 @@ class QueryTests(unittest.TestCase):
     self.assertIn("EffectiveStatus <> 'PurpleHistoric'", where)
     self.assertIn(" NOT LIKE 'Red%'", where)
     self.assertIn(" NOT LIKE 'Black%'", where)
-    self.assertIn(" NOT LIKE 'Grey%'", where)
+    self.assertIn(" NOT LIKE 'Gray%'", where)
     self.assertIn(" OR ", where)
 
   def test_mode_all_reads_every_row(self):

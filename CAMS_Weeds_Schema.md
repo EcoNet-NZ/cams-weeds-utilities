@@ -72,7 +72,7 @@ Fields can be updated by a number of systems, see the Source column of the follo
 | Display Name | Field Name | Type | Length | Nullable | Generation | Source | Constraints | Notes |
 |-------------|------------|------|--------|----------|------------|--------|-------------|--------|
 | (2a) Current Status | `ParentStatusWithDomain` | String | 100 | Yes | System | Child-to-parent updater, Daily rollover, CAMS form, iNat to CAMS, EasyEditor | Domain values | Synchronized from latest visit status. Annual rollover does not change it |
-| (2a-b) Effective status | `EffectiveStatus` | String | 100 | Yes | System | weed_maintenance | Domain values. `PurpleHistoric` displays as "Purple - please check" | Parent status, or `PurpleHistoric` when the next visit is due and the parent status does not start with Red, Black, or Grey. Not written back to the parent status |
+| (2a-b) Effective status | `EffectiveStatus` | String | 100 | Yes | System | weed_maintenance | Domain values. `PurpleHistoric` displays as "Purple - please check" | Parent status, or `PurpleHistoric` when the next visit is due and the parent status does not start with Red, Black, or Gray. Not written back to the parent status |
 | (2b) Number of pods, seed heads etc removed | `NbrPodsRemoved` | Integer | - | Yes | User | CAMS form, EasyEditor | >= 0 | Count of reproductive structures |
 | (2c) How Treated | `HowTreated` | String | 255 | Yes | User | CAMS form, iNat to CAMS, EasyEditor | - | Treatment method description |
 | (2cx) Treated? (Obsolete field) | `Treated` | String | 50 | Yes | Deprecated? | iNat to CAMS, EasyEditor | - | Whether treatment was applied partially or fully |
@@ -410,7 +410,7 @@ Daily process that pre-calculates region and district assignments and sets effec
 **Updates WeedLocations:**
 - `RegionCode` ← 2-character region code (e.g., "02" for Auckland)
 - `DistrictCode` ← 5-character district code (e.g., "04101" for Far North)
-- `EffectiveStatus` ← `PurpleHistoric` when `DateForNextVisitFromLastVisit` is today or earlier in NZT and `ParentStatusWithDomain` does not start with Red, Black, or Grey. Otherwise the parent status code. `PurpleHistoric` displays as "Purple - please check".
+- `EffectiveStatus` ← `PurpleHistoric` when `DateForNextVisitFromLastVisit` is today or earlier in NZT and `ParentStatusWithDomain` does not start with Red, Black, or Gray. Otherwise the parent status code. `PurpleHistoric` displays as "Purple - please check".
 
 **Assignment Logic:**
 - Primary: Exact spatial intersection with boundary polygons

@@ -40,7 +40,7 @@ def build_where(last_run, today, process_all):
     f"AND (ParentStatusWithDomain IS NULL OR ("
     f"ParentStatusWithDomain NOT LIKE 'Red%' "
     f"AND ParentStatusWithDomain NOT LIKE 'Black%' "
-    f"AND ParentStatusWithDomain NOT LIKE 'Grey%')) "
+    f"AND ParentStatusWithDomain NOT LIKE 'Gray%')) "
     f"AND (EffectiveStatus IS NULL OR EffectiveStatus <> '{OVERDUE_CODE}')"
   )
   return f"({edit_clause}) OR ({due_clause})"
