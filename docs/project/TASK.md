@@ -1,5 +1,18 @@
 # Tasks
 
+## 2026-10-07 — Nightly visit sync
+
+Copy the latest Visits_Table row onto WeedLocations during weed maintenance, using the analyzer's latest-visit rule.
+
+- [x] Tests for latest visit, purple skip, null clear, audit exclusion, effective status, and preview
+- [x] `plan_visit_sync` uses the analyzer rules
+- [x] Pipeline loads changed or all visits, merges one write, `--actions visits` and `--preview`
+- [x] Schema and README updates, including the visit-sync flow diagram
+
+### Discovered during work
+
+- [ ] Run `python weed_maintenance/weed_maintenance.py --env production --mode all --preview`, then `--mode all` once, so the backlog is repaired before the nightly changed run
+
 ## 2026-10-02 — Effective status on WeedLocations
 
 Daily `EffectiveStatus` on WeedLocations, in the same read and write as region and district assignment.

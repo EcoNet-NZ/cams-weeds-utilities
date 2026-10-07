@@ -405,12 +405,19 @@ When one side is already set, that value is copied to the empty side. When both 
 
 ### 6. Weed Maintenance
 
-Daily process that pre-calculates region and district assignments and sets effective status. Region and district assignment uses GeoPandas. Both changes are planned from one WeedLocations query and written once.
+Daily process that pre-calculates region and district assignments, sets effective status, and copies the latest visit onto WeedLocations. Region and district assignment uses GeoPandas. The changes are planned together and written once.
+
+Visit sync follows the weed visits analyzer. The latest visit is the newest `DateCheck`, otherwise the newest `CreationDate_1`, with `OBJECTID` as the tiebreaker. It writes `Urgency`, `ParentStatusWithDomain`, `DateVisitMadeFromLastVisit`, `DateForNextVisitFromLastVisit`, `LatestVisitStage`, and `LatestArea`. A purple `ParentStatusWithDomain` is left unchanged. The two audit dates are not written. A null latest-visit value clears the weed field.
+
+Changed mode reads Visits_Table rows with `EditDate_1` after the last run. Those visits choose the weeds. The values come from the latest of all visits for each weed. `--mode all` compares every weed. Run it once so the backlog is repaired, then the nightly changed run keeps up. `--preview` prints the planned updates and does not write.
+
+The flow diagram is in [weed_maintenance/README.md](weed_maintenance/README.md) under How It Works.
 
 **Updates WeedLocations:**
 - `RegionCode` ← 2-character region code (e.g., "02" for Auckland)
 - `DistrictCode` ← 5-character district code (e.g., "04101" for Far North)
-- `EffectiveStatus` ← `PurpleHistoric` when `DateForNextVisitFromLastVisit` is today or earlier in NZT and `ParentStatusWithDomain` does not start with Red, Black, or Gray. Otherwise the parent status code. `PurpleHistoric` displays as "Purple - please check".
+- `EffectiveStatus` ← `PurpleHistoric` when `DateForNextVisitFromLastVisit` is today or earlier in NZT and `ParentStatusWithDomain` does not start with Red, Black, or Gray. Otherwise the parent status code. `PurpleHistoric` displays as "Purple - please check". When visit sync changes the parent status or the next-visit date, effective status is recalculated from those new values.
+- `Urgency`, `ParentStatusWithDomain`, `DateVisitMadeFromLastVisit`, `DateForNextVisitFromLastVisit`, `LatestVisitStage`, `LatestArea` ← the latest visit, except a purple parent status and the audit dates
 
 **Assignment Logic:**
 - Primary: Exact spatial intersection with boundary polygons
@@ -418,8 +425,9 @@ Daily process that pre-calculates region and district assignments and sets effec
 - All layers use EPSG:2193 (NZTM) with geometry validation
 
 **Processing Modes:**
-- Incremental (default): `EditDate_1` after the last run, plus next-visit dates that became due after that run
-- Full (`--mode all`): Reprocess entire dataset, including historical overdue sites
+- Incremental WeedLocations (default): `EditDate_1` after the last run, plus next-visit dates that became due after that run
+- Incremental visits (default): `EditDate_1` on Visits_Table after the last run, then every visit for those weeds
+- Full (`--mode all`): Reprocess entire dataset, including historical overdue sites and visit-sync backlog
 - Change detection tracked in CAMS Process Audit table as `ProcessName = weed_maintenance`
 
 **Implementation:** `/weed_maintenance/weed_maintenance.py` with retry logic and smart field comparison
