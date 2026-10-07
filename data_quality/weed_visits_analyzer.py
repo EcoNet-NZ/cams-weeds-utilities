@@ -648,6 +648,19 @@ def filter_existing_columns(df, column_list):
   return [col for col in column_list if col in df.columns]
 
 
+def prefix_masked_values(df, column, mask, prefix='← '):
+  """Prefix selected cells in place.
+
+  Reason: pandas 3 raises TypeError if loc writes strings into a numeric column
+  such as DifficultyChild. Cast to object first so the marker can sit beside
+  the original values.
+  """
+  if column not in df.columns or not mask.any():
+    return
+  df[column] = df[column].astype(object)
+  df.loc[mask, column] = prefix + df.loc[mask, column].map(str)
+
+
 def apply_bold_to_prefixed_cells(sheet, column_names, bold_font, prefix='← '):
   """Apply bold formatting to cells with a specific prefix in given columns"""
   header_row = [cell.value for cell in sheet[1]]
@@ -968,12 +981,12 @@ def generate_mismatch_report(merged_df, output_file='weed_visits_field_compariso
     if visit_field in mismatches_detail_df.columns and mismatch_col in mismatches_detail_df.columns:
       # Add prefix to mismatched Visit field values (skip None values)
       mask = (mismatches_detail_df[mismatch_col] == 'X') & (mismatches_detail_df[visit_field].notna())
-      mismatches_detail_df.loc[mask, visit_field] = '← ' + mismatches_detail_df.loc[mask, visit_field].astype(str)
+      prefix_masked_values(mismatches_detail_df, visit_field, mask)
     
     # Also prefix in all_records_df for the All Records sheet
     if visit_field in all_records_df.columns and mismatch_col in all_records_df.columns:
       mask = (all_records_df[mismatch_col] == 'X') & (all_records_df[visit_field].notna())
-      all_records_df.loc[mask, visit_field] = '← ' + all_records_df.loc[mask, visit_field].astype(str)
+      prefix_masked_values(all_records_df, visit_field, mask)
   
   # Create Missing Visit Date sheet - visits where DateCheck is not set
   missing_date_df = result_df[
@@ -996,8 +1009,7 @@ def generate_mismatch_report(merged_df, output_file='weed_visits_field_compariso
   if 'visit_CreationDate_1' in missing_date_export.columns:
     mask = (missing_date_export['visit_CreationDate_1'].notna()) & \
            (missing_date_export['visit_CreationDate_1'] != INITIAL_BULK_LOAD_DATE_ISO)
-    missing_date_export.loc[mask, 'visit_CreationDate_1'] = \
-      '← ' + missing_date_export.loc[mask, 'visit_CreationDate_1'].astype(str)
+    prefix_masked_values(missing_date_export, 'visit_CreationDate_1', mask)
   
   # Create Missing Status sheet - visits where WeedVisitStatus is not set
   # Exclude cases where ParentStatusWithDomain is missing or starts with Purple (per ignore rule)
