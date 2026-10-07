@@ -10,7 +10,7 @@ Dashboard users experience slow response times when filtering by region or distr
 
 ### Business Solution
 
-Automated daily preprocessing using high-performance GeoPandas to pre-calculate region and district assignments for all weed locations, eliminating real-time spatial lookups during dashboard interactions. The same run sets `EffectiveStatus`.
+Automated daily preprocessing using high-performance GeoPandas to pre-calculate region and district assignments for all weed locations, eliminating real-time spatial lookups during dashboard interactions. The same run sets `EffectiveStatus` and copies the latest visit onto WeedLocations when the webhook did not.
 
 ## Quick Start
 
@@ -26,11 +26,17 @@ export ARCGIS_PORTAL_URL="https://your-portal.arcgis.com"
 # Run spatial field updater (changed records only)
 python weed_maintenance/weed_maintenance.py --env development
 
-# Run on all records
+# Run on all records. Do this once after visit sync ships, so the backlog is repaired.
 python weed_maintenance/weed_maintenance.py --env development --mode all
 
-# Backfill EffectiveStatus only. Region and district are skipped, and LastRunTimestamp stays put.
+# Print the planned updates and write nothing.
+python weed_maintenance/weed_maintenance.py --env production --mode all --preview
+
+# Backfill EffectiveStatus only. Region, district, and visit sync are skipped, and LastRunTimestamp stays put.
 python weed_maintenance/weed_maintenance.py --env production --mode all --actions status
+
+# Visit sync only. Region and district are skipped, and LastRunTimestamp stays put.
+python weed_maintenance/weed_maintenance.py --env development --actions visits
 ```
 
 `EffectiveStatus` must already exist on WeedLocations. The script does not add the field.
@@ -46,13 +52,36 @@ A normal run reads features edited since the last audit timestamp (`EditDate_1`)
 
 `--actions status` writes EffectiveStatus only. It does not move `LastRunTimestamp`, so the next full run still assigns region and district for weeds edited since the last spatial run.
 
+`--preview` prints one line per WeedLocations row that would change, then a count. Each field is `old->new`. Date fields are New Zealand dates, with the time only when it is not midnight. It does not write and it does not move `LastRunTimestamp`. The scheduled workflow does not pass `--preview`.
+
 The scheduled workflow runs at 00:15 NZT and updates production. Development is a manual workflow run, or `python weed_maintenance/weed_maintenance.py --env development`.
+
+## Visit sync
+
+Visit sync does the child-to-parent update the webhook missed. It uses the weed visits analyzer rules: the latest visit is the newest `DateCheck`, or the newest `CreationDate_1` when `DateCheck` is empty, with `OBJECTID` as the tiebreaker.
+
+Fields written only when the value differs:
+
+- `Urgency` from `DifficultyChild`
+- `ParentStatusWithDomain` from `WeedVisitStatus`
+- `DateVisitMadeFromLastVisit` from `DateCheck`
+- `DateForNextVisitFromLastVisit` from `DateForReturnVisit`
+- `LatestVisitStage` from `VisitStage`
+- `LatestArea` from `Area`
+
+A `ParentStatusWithDomain` that starts with `Purple` is left unchanged. `DateOfLastCreateFromLastVisit` and `DateOfLastEditFromLastVisit` are not written. A null value on the latest visit clears the weed field. A weed with no visits is left unchanged.
+
+When visit sync changes `ParentStatusWithDomain` or `DateForNextVisitFromLastVisit`, `EffectiveStatus` is recalculated from those new values and included in the same write.
+
+`--mode changed` queries Visits_Table rows whose `EditDate_1` is after `LastRunTimestamp`. Those rows only choose which weeds to update. The values come from the latest visit among every visit for each of those weeds. `--mode all` compares every weed to every visit. Run `--mode all` once so older missed webhooks are repaired and the timestamp moves forward. Later nightly runs stay on `--mode changed`.
+
+`--actions visits` runs visit sync only and leaves `LastRunTimestamp` unchanged.
 
 ## Business Requirements
 
 ### Functional Requirements
-- **Daily Processing**: Automated spatial assignment of region/district codes to weed locations
-- **Incremental Updates**: Process only changed records (new weeds, moved locations, updated boundaries)
+- **Daily Processing**: Automated spatial assignment of region/district codes to weed locations, plus latest-visit sync
+- **Incremental Updates**: Process weeds edited since the last run, visits edited since the last run, and next-visit dates that became due
 - **Multi-Environment**: Support separate development and production deployments
 - **Change Detection**: Utilize existing EditDate_1 field for detecting modified weed records
 
@@ -60,7 +89,8 @@ The scheduled workflow runs at 00:15 NZT and updates production. Development is 
 - **Region Assignment**: 2-character region codes stored in WeedLocations.RegionCode
 - **District Assignment**: 5-character district codes stored in WeedLocations.DistrictCode
 - **Effective status**: `EffectiveStatus` stores `PurpleHistoric` or the parent status code
-- **Layer Monitoring**: Track changes using EditDate_1 timestamps
+- **Latest visit**: Urgency, parent status, visit dates, visit stage, and area copied from the latest visit
+- **Layer Monitoring**: Track weed changes with WeedLocations.`EditDate_1` and visit changes with Visits_Table.`EditDate_1`
 
 ### Operational Requirements
 - **Reliability**: Process only when changes are detected
@@ -101,17 +131,37 @@ The script reads layer IDs from `weed_maintenance/config/environment_config.json
 
 1. **Connects** to ArcGIS using environment variables
 2. **Loads configuration** for the specified environment
-3. **Queries features** based on mode (all vs changed since last run)
-4. **Performs spatial analysis** to find intersecting region and district for each weed location
-5. **Plans** region, district, and effective-status changes from that one result
+3. **Queries WeedLocations** based on mode (all vs changed since last run) for region, district, and effective status
+4. **Queries Visits_Table** for visit sync. Changed mode reads visits edited since the last run, then every visit for those weeds
+5. **Plans** region, district, effective status, and visit-sync changes
 6. **Writes** the merged attributes once, in batches of 100, and only where a value changed
-7. **Saves timestamp** for future change detection
+7. **Saves timestamp** for future change detection, unless the run is `--preview`, `--actions status`, or `--actions visits`
+
+Changed visits select the weeds. All visits for those weeds supply the latest row. That plan merges with region, district, and effective status into one WeedLocations write.
+
+```mermaid
+flowchart TD
+  changedVisits[Visits edited since last run] --> guids[Affected weed GlobalIDs]
+  guids --> allForThose[All visits for those weeds]
+  allForThose --> latest[Latest visit per weed]
+  guids --> weedRows[Those WeedLocations rows]
+  latest --> plan[Visit sync plan]
+  weedRows --> plan
+  incremental[Changed WeedLocations] --> spatial[Region and district]
+  incremental --> status[Effective status]
+  plan --> overlay[Effective status from synced status and next date]
+  spatial --> merge[One WeedLocations write]
+  status --> merge
+  plan --> merge
+  overlay --> merge
+```
 
 ### Change Detection Logic
 
 #### ArcGIS Audit Table Tracking
 - Last run timestamp stored in "CAMS Process Audit" ArcGIS table
-- Uses `EditDate_1 > last_run_timestamp` for incremental processing
+- Uses WeedLocations.`EditDate_1` after the last run for region, district, and effective status
+- Uses Visits_Table.`EditDate_1` after the last run to choose which weeds visit sync updates
 - Falls back to processing all features if no previous run found
 - Each environment (development, production) tracks timestamps independently using Environment field
 - ProcessName field identifies this utility ("weed_maintenance"). The first run copies LastRunTimestamp from a spatial_field_updater audit row for the same environment and leaves that old row in place.
@@ -123,8 +173,8 @@ The script reads layer IDs from `weed_maintenance/config/environment_config.json
 - **Per-Environment**: Separate records for development and production workflows
 
 #### Smart Updates
-- Only updates features where RegionCode or DistrictCode actually changed
-- Compares current field values with spatial query results
+- Only updates features where a planned field actually changed
+- Compares current field values with the planned region, district, effective status, and latest-visit values
 - Avoids unnecessary writes to unchanged features
 
 ### Error Handling
