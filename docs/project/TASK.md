@@ -1,5 +1,12 @@
 # Tasks
 
+## 2026-10-15 — Boundary query gzip failures
+
+District geometry downloads intermittently arrive with `Content-Encoding: gzip` and a body zlib cannot decode (`invalid block type`). Retrying the same full-layer query failed all three times.
+
+- [x] Page boundary geometries, request uncompressed responses, and retry a failed page at a smaller size
+- [x] Tests for paging, a short page, a gzip failure, and giving up after five attempts on one feature
+
 ## 2026-10-07 — Nightly visit sync
 
 Copy the latest Visits_Table row onto WeedLocations during weed maintenance, using the analyzer's latest-visit rule.

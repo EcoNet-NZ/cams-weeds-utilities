@@ -1,8 +1,15 @@
 """Spatial region and district assignment for weed locations."""
 
+import time
+from contextlib import contextmanager
+
 import geopandas as gpd
 import pandas as pd
-from tenacity import retry, stop_after_attempt, wait_fixed
+
+# Reason: one response for every district polygon is large enough that ArcGIS
+# intermittently returns Content-Encoding: gzip with a body zlib cannot decode.
+BOUNDARY_PAGE_SIZE = 8
+BOUNDARY_ATTEMPTS = 5
 
 def arcgis_to_geopandas(feature_set, geometry_col='SHAPE'):
     """Convert ArcGIS FeatureSet to GeoPandas DataFrame with geometry validation"""
@@ -75,23 +82,137 @@ def arcgis_to_geopandas(feature_set, geometry_col='SHAPE'):
     
     return gdf
 
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
+class _BoundaryFeatures:
+    def __init__(self, features, spatial_reference):
+        self.features = features
+        self.spatial_reference = spatial_reference
+
+
+def _request_headers(layer):
+    connection = getattr(layer, "_con", None)
+    session = getattr(connection, "_session", None)
+    return getattr(session, "headers", None)
+
+
+@contextmanager
+def _uncompressed(layer):
+    """Ask this layer's HTTP session not to gzip the response."""
+    headers = _request_headers(layer)
+    if headers is None:
+        yield
+        return
+    previous = headers.get("Accept-Encoding")
+    headers["Accept-Encoding"] = "identity"
+    try:
+        yield
+    finally:
+        if previous is None:
+            headers.pop("Accept-Encoding", None)
+        else:
+            headers["Accept-Encoding"] = previous
+
+
+def _object_ids(layer, sleep):
+    result = None
+    for attempt in range(1, BOUNDARY_ATTEMPTS + 1):
+        try:
+            result = layer.query(where="1=1", return_ids_only=True, return_geometry=False)
+            break
+        except OSError as error:
+            if attempt == BOUNDARY_ATTEMPTS:
+                raise
+            print(f"    Boundary id query failed (attempt {attempt}/{BOUNDARY_ATTEMPTS}): {type(error).__name__}")
+            sleep(attempt * 2)
+    if isinstance(result, dict):
+        field = result.get("objectIdFieldName") or "OBJECTID"
+        return field, list(result.get("objectIds") or [])
+    field = getattr(result, "objectIdFieldName", None) or "OBJECTID"
+    return field, list(getattr(result, "objectIds", None) or [])
+
+
+def _query_page(layer, remaining, out_fields, order_field, page_size, sleep):
+    """Fetch one page, halving it when the response cannot be decoded."""
+    size = page_size
+    while True:
+        batch = remaining[:size]
+        try:
+            result = layer.query(
+                object_ids=batch,
+                out_fields=out_fields,
+                return_geometry=True,
+                order_by_fields=order_field,
+            )
+            if isinstance(result, dict) or not hasattr(result, "features"):
+                raise OSError("boundary query returned a raw response")
+            if len(result.features) < len(batch):
+                if len(batch) == 1:
+                    print("    Boundary feature missing from response, continuing")
+                    return result, 1, 1
+                raise OSError(f"short boundary page {len(result.features)}/{len(batch)}")
+            next_size = size if len(batch) == size else page_size
+            return result, len(batch), next_size
+        except OSError as error:
+            if len(batch) == 1:
+                print(f"    Boundary feature failed (attempt 1/{BOUNDARY_ATTEMPTS}): {type(error).__name__}")
+                return _retry_one(layer, batch, out_fields, order_field, sleep)
+            size = max(1, len(batch) // 2)
+            print(f"    Boundary page failed ({type(error).__name__}), retrying {size} features")
+            sleep(2)
+
+
+def _retry_one(layer, batch, out_fields, order_field, sleep):
+    for attempt in range(2, BOUNDARY_ATTEMPTS + 1):
+        try:
+            result = layer.query(
+                object_ids=batch,
+                out_fields=out_fields,
+                return_geometry=True,
+                order_by_fields=order_field,
+            )
+            if isinstance(result, dict) or not hasattr(result, "features"):
+                raise OSError("boundary query returned a raw response")
+            if not result.features:
+                print("    Boundary feature missing from response, continuing")
+            return result, 1, 1
+        except OSError as error:
+            if attempt == BOUNDARY_ATTEMPTS:
+                raise
+            print(f"    Boundary feature failed (attempt {attempt}/{BOUNDARY_ATTEMPTS}): {type(error).__name__}")
+            sleep(attempt * 2)
+    raise OSError("boundary feature failed")
+
+
+def query_boundary_features(layer, out_fields, page_size=BOUNDARY_PAGE_SIZE, sleep=time.sleep):
+    """Load a boundary layer in small geometry pages."""
+    with _uncompressed(layer):
+        order_field, object_ids = _object_ids(layer, sleep)
+        features = []
+        spatial_reference = None
+        index = 0
+        size = page_size
+        while index < len(object_ids):
+            page, taken, size = _query_page(
+                layer, object_ids[index:], out_fields, order_field, size, sleep
+            )
+            features.extend(page.features)
+            if spatial_reference is None:
+                spatial_reference = getattr(page, "spatial_reference", None)
+            index += taken
+        return _BoundaryFeatures(features, spatial_reference)
+
+
 def load_boundaries_as_geopandas(region_layer, district_layer):
     """Load boundary layers as GeoPandas DataFrames - SUPER FAST!"""
     print("Loading boundary layers with GeoPandas...")
-    
-    # Load regions
+
     print("  Loading regions...")
-    regions_result = region_layer.query(out_fields=["REGC_code"], return_geometry=True)
-    regions_gdf = arcgis_to_geopandas(regions_result)
+    regions_gdf = arcgis_to_geopandas(query_boundary_features(region_layer, ["REGC_code"]))
     print(f"  Loaded {len(regions_gdf)} region boundaries")
-    
-    # Load districts  
+
     print("  Loading districts...")
-    districts_result = district_layer.query(out_fields=["TALB_code"], return_geometry=True)
-    districts_gdf = arcgis_to_geopandas(districts_result)
+    districts_gdf = arcgis_to_geopandas(query_boundary_features(district_layer, ["TALB_code"]))
     print(f"  Loaded {len(districts_gdf)} district boundaries")
-    
+
     return regions_gdf, districts_gdf
 
 def find_nearest_boundary(point_gdf, boundary_gdf, code_field, max_distance_m=1000):
