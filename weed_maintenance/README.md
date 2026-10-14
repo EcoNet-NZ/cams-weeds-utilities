@@ -183,6 +183,7 @@ The script uses `@retry` decorators for robust error handling:
 - **3 retry attempts** for ArcGIS operations
 - **5-second delays** between retry attempts
 - **Automatic recovery** from temporary network issues
+- **Boundary geometries** are read in small pages without gzip. A page that fails to decode is retried, then split, so one corrupt district download does not fail the run.
 
 ## Performance Characteristics
 

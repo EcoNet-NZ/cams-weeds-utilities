@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from audit import resolve_audit
 from effective_status import effective_status, plan_effective_status, require_effective_status_field
 from merge import merge_attribute_updates
+from actions.spatial_codes import query_boundary_features
 from actions.visit_sync import build_visit_where, format_preview, plan_visit_sync
 from pipeline import select_actions, should_persist
 from query import build_where
@@ -406,6 +407,106 @@ class AuditTests(unittest.TestCase):
     last_run, copy_from_old = resolve_audit(int(utc_moment.timestamp() * 1000), None)
     self.assertEqual(last_run, LAST_RUN)
     self.assertFalse(copy_from_old)
+
+
+class _BoundaryFeature:
+  def __init__(self, object_id):
+    self.attributes = {"OBJECTID": object_id}
+    self.geometry = {"rings": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+
+
+class _BoundaryPage:
+  def __init__(self, features):
+    self.features = features
+    self.spatial_reference = {"wkid": 2193}
+
+
+class _BoundaryLayer:
+  """Serves object ids, and fails geometry pages the test lists by size."""
+
+  def __init__(self, object_ids, fail_sizes=(), fail_ids=(), short_sizes=()):
+    self.object_ids = list(object_ids)
+    self.fail_sizes = set(fail_sizes)
+    self.fail_ids = set(fail_ids)
+    self.short_sizes = set(short_sizes)
+    self.geometry_calls = []
+    self.encoding_during_query = []
+    self._con = type("Con", (), {})()
+    self._con._session = type("Session", (), {})()
+    self._con._session.headers = {"Accept-Encoding": "gzip, deflate"}
+
+  def query(self, **kwargs):
+    self.encoding_during_query.append(self._con._session.headers.get("Accept-Encoding"))
+    if kwargs.get("return_ids_only"):
+      return {"objectIdFieldName": "OBJECTID", "objectIds": self.object_ids}
+    object_ids = list(kwargs["object_ids"])
+    self.geometry_calls.append(object_ids)
+    if len(object_ids) in self.fail_sizes or object_ids[0] in self.fail_ids:
+      from requests.exceptions import ContentDecodingError
+      raise ContentDecodingError("invalid block type")
+    if len(object_ids) in self.short_sizes:
+      return _BoundaryPage([_BoundaryFeature(object_ids[0])])
+    return _BoundaryPage([_BoundaryFeature(object_id) for object_id in object_ids])
+
+
+class BoundaryQueryTests(unittest.TestCase):
+  def test_geometry_is_requested_in_pages(self):
+    layer = _BoundaryLayer(range(1, 11))
+
+    result = query_boundary_features(layer, ["REGC_code"], page_size=8, sleep=lambda _seconds: None)
+
+    self.assertEqual(layer.geometry_calls, [list(range(1, 9)), [9, 10]])
+    self.assertEqual([feature.attributes["OBJECTID"] for feature in result.features], list(range(1, 11)))
+    self.assertEqual(result.spatial_reference, {"wkid": 2193})
+    self.assertEqual(layer._con._session.headers["Accept-Encoding"], "gzip, deflate")
+    self.assertTrue(layer.encoding_during_query)
+    self.assertTrue(all(value == "identity" for value in layer.encoding_during_query))
+
+  def test_gzip_failure_retries_a_smaller_page(self):
+    layer = _BoundaryLayer([1, 2, 3], fail_sizes={2, 3, 4, 8})
+
+    result = query_boundary_features(layer, ["TALB_code"], page_size=4, sleep=lambda _seconds: None)
+
+    self.assertEqual(layer.geometry_calls, [[1, 2, 3], [1], [2], [3]])
+    self.assertEqual([feature.attributes["OBJECTID"] for feature in result.features], [1, 2, 3])
+
+  def test_short_page_is_split(self):
+    layer = _BoundaryLayer([1, 2, 3, 4], short_sizes={4, 2})
+
+    result = query_boundary_features(layer, ["TALB_code"], page_size=4, sleep=lambda _seconds: None)
+
+    self.assertEqual(layer.geometry_calls, [[1, 2, 3, 4], [1, 2], [1], [2], [3], [4]])
+    self.assertEqual([feature.attributes["OBJECTID"] for feature in result.features], [1, 2, 3, 4])
+
+  def test_one_feature_is_retried_then_kept(self):
+    layer = _BoundaryLayer([7], fail_ids={7})
+    calls = {"count": 0}
+
+    def query(**kwargs):
+      if kwargs.get("return_ids_only"):
+        layer.encoding_during_query.append(layer._con._session.headers.get("Accept-Encoding"))
+        return {"objectIdFieldName": "OBJECTID", "objectIds": [7]}
+      calls["count"] += 1
+      layer.geometry_calls.append(list(kwargs["object_ids"]))
+      if calls["count"] < 3:
+        from requests.exceptions import ContentDecodingError
+        raise ContentDecodingError("invalid block type")
+      return _BoundaryPage([_BoundaryFeature(7)])
+
+    layer.query = query
+    result = query_boundary_features(layer, ["TALB_code"], page_size=8, sleep=lambda _seconds: None)
+
+    self.assertEqual(calls["count"], 3)
+    self.assertEqual(result.features[0].attributes["OBJECTID"], 7)
+
+  def test_one_feature_stops_after_five_failures(self):
+    layer = _BoundaryLayer([7], fail_ids={7})
+
+    with self.assertRaises(OSError):
+      query_boundary_features(layer, ["TALB_code"], page_size=8, sleep=lambda _seconds: None)
+
+    self.assertEqual(len(layer.geometry_calls), 5)
+    self.assertEqual(layer._con._session.headers["Accept-Encoding"], "gzip, deflate")
 
 
 if __name__ == "__main__":
