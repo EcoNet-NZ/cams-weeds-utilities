@@ -272,6 +272,17 @@ def apply_updates(weed_layer, updates):
   return total_updated
 
 
+def index_current_rows(rows):
+  """OBJECTID to the attributes already stored, merging rows that share an id."""
+  indexed = {}
+  for row in rows:
+    object_id = row.get("OBJECTID")
+    if object_id is None:
+      continue
+    indexed.setdefault(object_id, {}).update(row)
+  return indexed
+
+
 def run(environment, process_all=False, actions="all", preview=False):
   """Plan the selected actions and write the merged result, unless this is a preview."""
   selected = select_actions(actions)
@@ -324,14 +335,10 @@ def run(environment, process_all=False, actions="all", preview=False):
   print(f"Visit sync updates: {len(visit_plan)}")
 
   updates = merge_attribute_updates(spatial_plan, status_plan, visit_plan)
+  current = index_current_rows(list(rows) + list(sync_weeds))
+  for line in format_preview(updates, current):
+    print(line)
   if not write:
-    current_by_id = {}
-    for row in list(rows) + list(sync_weeds):
-      object_id = row.get("OBJECTID")
-      if object_id is not None:
-        current_by_id.setdefault(object_id, {}).update(row)
-    for line in format_preview(updates, current_by_id):
-      print(line)
     print("Preview only. Left LastRunTimestamp unchanged")
     return
   apply_updates(weed_layer, updates)

@@ -14,7 +14,7 @@ from effective_status import effective_status, plan_effective_status, require_ef
 from merge import merge_attribute_updates
 from actions.spatial_codes import query_boundary_features
 from actions.visit_sync import build_visit_where, format_preview, plan_visit_sync
-from pipeline import select_actions, should_persist
+from pipeline import index_current_rows, select_actions, should_persist
 from query import build_where
 
 NZT = ZoneInfo("Pacific/Auckland")
@@ -377,6 +377,17 @@ class PreviewTests(unittest.TestCase):
 
   def test_preview_of_no_updates_prints_zero(self):
     self.assertEqual(format_preview([], {}), ["0 updates"])
+
+  def test_logged_rows_keep_fields_from_both_queries(self):
+    indexed = index_current_rows([
+      {"OBJECTID": 10, "RegionCode": "02"},
+      {"OBJECTID": 10, "ParentStatusWithDomain": "OrangeDeadHeaded"},
+    ])
+    lines = format_preview(
+      [{"attributes": {"OBJECTID": 10, "RegionCode": "03", "ParentStatusWithDomain": "YellowKilledThisYear"}}],
+      indexed,
+    )
+    self.assertEqual(lines[0], "OBJECTID 10: RegionCode=02->03, ParentStatusWithDomain=OrangeDeadHeaded->YellowKilledThisYear")
 
   def test_preview_does_not_write_or_move_the_timestamp(self):
     self.assertEqual(should_persist(preview=True, save_last_run=True), (False, False))

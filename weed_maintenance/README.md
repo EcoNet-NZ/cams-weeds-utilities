@@ -58,7 +58,7 @@ A normal run reads features edited since the last audit timestamp (`EditDate_1`)
 
 `--actions status` writes EffectiveStatus only. It does not move `LastRunTimestamp`, so the next full run still assigns region and district for weeds edited since the last spatial run.
 
-`--preview` prints one line per WeedLocations row that would change, then a count. Each field is `old->new`. Date fields are New Zealand dates, with the time only when it is not midnight. It does not write and it does not move `LastRunTimestamp`. The scheduled workflow does not pass `--preview`.
+`--preview` prints one line per WeedLocations row that would change, then a count. Each field is `old->new`. Date fields are New Zealand dates, with the time only when it is not midnight. It does not write and it does not move `LastRunTimestamp`. A run without `--preview` prints those same lines and then writes them. The scheduled workflow does not pass `--preview`.
 
 The scheduled workflow runs at 00:15 NZT and updates production. Development is a manual workflow run, or `python weed_maintenance/weed_maintenance.py --env development`.
 
