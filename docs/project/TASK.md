@@ -1,5 +1,12 @@
 # Tasks
 
+## 2026-10-17 — Inspect one weed instance
+
+Show how the scheduled weed maintenance job would treat a single WeedLocations OBJECTID, read from ArcGIS.
+
+- [x] Report selection, effective status, parent status, editors, and visits
+- [x] Read the configured feature layer or an ArcGIS feature layer / file geodatabase item
+
 ## 2026-10-15 — Boundary query gzip failures
 
 District geometry downloads intermittently arrive with `Content-Encoding: gzip` and a body zlib cannot decode (`invalid block type`). Retrying the same full-layer query failed all three times.

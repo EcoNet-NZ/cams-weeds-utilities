@@ -37,6 +37,12 @@ python weed_maintenance/weed_maintenance.py --env production --mode all --action
 
 # Visit sync only. Region and district are skipped, and LastRunTimestamp stays put.
 python weed_maintenance/weed_maintenance.py --env development --actions visits
+
+# Show how the scheduled job would treat one weed instance. Reads from ArcGIS.
+python weed_maintenance/inspect_instance.py 55622
+
+# The same report for a file geodatabase or feature layer stored as an ArcGIS item.
+python weed_maintenance/inspect_instance.py 55622 --item <portal-item-id>
 ```
 
 `EffectiveStatus` must already exist on WeedLocations. The script does not add the field.

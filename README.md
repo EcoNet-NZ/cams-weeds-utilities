@@ -33,6 +33,7 @@ python weed_maintenance/weed_maintenance.py --env development
 
 **Included Tools**:
 - **weed_maintenance.py**: Region, district, and effective status
+- **inspect_instance.py**: How the maintenance job would treat one weed instance
 - **map_weed_locations.py**: Visualization tool for weed location mapping
 - **map_unassigned_points.py**: Identifies and maps unassigned locations
 
