@@ -1,6 +1,7 @@
 # Dependencies for CAMS Utilities
 # Core spatial processing libraries
 arcgis>=2.4.0          # ArcGIS API for Python - feature layer operations (compatible with Python 3.12)
+six>=1.16.0            # arcgis 2.4.4 imports six in raster/_layer.py but does not declare it
 tenacity>=8.0.0        # Retry logic for robust error handling
 geopandas>=0.13.0      # High-performance spatial operations 
 shapely>=2.0.0         # Geometry validation and repair

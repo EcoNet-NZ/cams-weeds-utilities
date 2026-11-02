@@ -202,6 +202,7 @@ pip install -r requirements.txt
 ```
 
 - **arcgis**: ArcGIS API for Python - feature layer operations
+- **six**: Required by the ArcGIS API (`arcgis.raster` imports it without declaring the dependency)
 - **tenacity**: Retry logic for robust error handling
 - **geopandas**: High-performance spatial operations
 - **shapely**: Geometry validation and processing

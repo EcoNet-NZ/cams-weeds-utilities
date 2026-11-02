@@ -445,6 +445,7 @@ def robust_operation():
 
 ```txt
 arcgis>=2.0.0          # ArcGIS API for Python
+six>=1.16.0            # arcgis 2.4.4 imports six without declaring it
 tenacity>=8.0.0        # Retry logic for robust operations  
 geopandas>=0.13.0      # High-performance spatial operations
 shapely>=2.0.0         # Geometry validation and repair

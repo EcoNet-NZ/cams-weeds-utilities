@@ -1,5 +1,11 @@
 # Tasks
 
+## 2026-11-03 — Weed maintenance missing six
+
+Scheduled weed maintenance dies on `FeatureLayer.fromitem` because `arcgis` 2.4.4 imports `six` and does not install it.
+
+- [x] Declare `six` in `requirements.txt` so the workflow install includes it
+
 ## 2026-10-17 — Inspect one weed instance
 
 Show how the scheduled weed maintenance job would treat a single WeedLocations OBJECTID, read from ArcGIS.
