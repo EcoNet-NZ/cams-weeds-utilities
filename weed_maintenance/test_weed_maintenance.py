@@ -220,6 +220,103 @@ class VisitSyncTests(unittest.TestCase):
     ], TODAY)
     self.assertEqual(planned, {})
 
+  def test_visit_created_on_1_nov_2026_replaces_purple_parent(self):
+    planned = plan_visit_sync([
+      synced_weed(ParentStatusWithDomain="PurpleHistoric", EffectiveStatus="PurpleHistoric"),
+    ], [
+      synced_visit(
+        WeedVisitStatus="YellowKilledThisYear",
+        CreationDate_1=epoch_ms(2026, 11, 1),
+        EditDate_1=epoch_ms(2026, 6, 2),
+      ),
+    ], TODAY)
+    self.assertEqual(planned[10]["ParentStatusWithDomain"], "YellowKilledThisYear")
+    self.assertEqual(planned[10]["EffectiveStatus"], "YellowKilledThisYear")
+
+  def test_visit_edited_on_1_nov_2026_replaces_purple_parent(self):
+    planned = plan_visit_sync([
+      synced_weed(ParentStatusWithDomain="PurpleHistoric", EffectiveStatus="PurpleHistoric"),
+    ], [
+      synced_visit(
+        WeedVisitStatus="YellowKilledThisYear",
+        CreationDate_1=epoch_ms(2021, 10, 9, 21, 19),
+        EditDate_1=epoch_ms(2026, 11, 1),
+      ),
+    ], TODAY)
+    self.assertEqual(planned[10]["ParentStatusWithDomain"], "YellowKilledThisYear")
+
+  def test_visit_touched_on_31_oct_2026_keeps_purple_parent(self):
+    planned = plan_visit_sync([
+      synced_weed(
+        ParentStatusWithDomain="PurpleHistoric",
+        EffectiveStatus="PurpleHistoric",
+        Urgency=1,
+      ),
+    ], [
+      synced_visit(
+        WeedVisitStatus="YellowKilledThisYear",
+        DifficultyChild=4,
+        CreationDate_1=epoch_ms(2026, 10, 1),
+        EditDate_1=epoch_ms(2026, 10, 31, 23, 59),
+      ),
+    ], TODAY)
+    self.assertEqual(planned[10]["Urgency"], 4)
+    self.assertNotIn("ParentStatusWithDomain", planned[10])
+
+  def test_purple_parent_stays_when_visit_audit_dates_are_before_cutoff(self):
+    planned = plan_visit_sync([
+      synced_weed(
+        ParentStatusWithDomain="PurpleHistoric",
+        EffectiveStatus="PurpleHistoric",
+        Urgency=1,
+      ),
+    ], [
+      synced_visit(
+        WeedVisitStatus="YellowKilledThisYear",
+        DifficultyChild=4,
+        CreationDate_1=epoch_ms(2026, 9, 30, 23, 59),
+        EditDate_1=epoch_ms(2021, 10, 9, 21, 19),
+      ),
+    ], TODAY)
+    self.assertEqual(planned[10]["Urgency"], 4)
+    self.assertNotIn("ParentStatusWithDomain", planned[10])
+
+  def test_recent_visit_replaces_purple_parent_when_next_visit_is_due(self):
+    planned = plan_visit_sync([
+      synced_weed(
+        ParentStatusWithDomain="PurpleHistoric",
+        EffectiveStatus="PurpleHistoric",
+        DateForNextVisitFromLastVisit=epoch_ms(2026, 10, 1),
+      ),
+    ], [
+      synced_visit(
+        WeedVisitStatus="YellowKilledThisYear",
+        DateForReturnVisit=epoch_ms(2026, 10, 1),
+        CreationDate_1=epoch_ms(2026, 11, 1),
+        EditDate_1=epoch_ms(2026, 11, 1),
+      ),
+    ], TODAY)
+    self.assertEqual(planned[10]["ParentStatusWithDomain"], "YellowKilledThisYear")
+    self.assertNotIn("EffectiveStatus", planned[10])
+
+  def test_missing_visit_audit_dates_keep_purple_parent(self):
+    planned = plan_visit_sync([
+      synced_weed(
+        ParentStatusWithDomain="PurpleHistoric",
+        EffectiveStatus="PurpleHistoric",
+        Urgency=1,
+      ),
+    ], [
+      synced_visit(
+        WeedVisitStatus="YellowKilledThisYear",
+        DifficultyChild=4,
+        CreationDate_1=None,
+        EditDate_1=None,
+      ),
+    ], TODAY)
+    self.assertEqual(planned[10]["Urgency"], 4)
+    self.assertNotIn("ParentStatusWithDomain", planned[10])
+
   def test_non_purple_status_is_replaced(self):
     planned = plan_visit_sync([synced_weed()], [
       synced_visit(WeedVisitStatus="OrangeDeadHeaded"),

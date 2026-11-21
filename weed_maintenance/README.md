@@ -75,7 +75,7 @@ Fields written only when the value differs:
 - `LatestVisitStage` from `VisitStage`
 - `LatestArea` from `Area`
 
-A `ParentStatusWithDomain` that starts with `Purple` is left unchanged. `DateOfLastCreateFromLastVisit` and `DateOfLastEditFromLastVisit` are not written. A null value on the latest visit clears the weed field. A weed with no visits is left unchanged.
+A `ParentStatusWithDomain` that starts with `Purple` is left unchanged unless the latest visit's `CreationDate_1` or `EditDate_1` is on or after 1 Nov 2026 New Zealand time. A missing audit date does not qualify. A qualifying visit replaces the purple parent with `WeedVisitStatus`. `DateOfLastCreateFromLastVisit` and `DateOfLastEditFromLastVisit` are not written. A null value on the latest visit clears the weed field. A weed with no visits is left unchanged.
 
 When visit sync changes `ParentStatusWithDomain` or `DateForNextVisitFromLastVisit`, `EffectiveStatus` is recalculated from those new values and included in the same write.
 

@@ -1,7 +1,8 @@
 """Copy the latest visit onto WeedLocations.
 
 The latest visit and the field rules come from the weed visits analyzer.
-Audit dates stay out, and a purple parent status is left unchanged.
+Audit dates stay out. A purple parent status stays until the visit was
+created or edited on or after 1 Nov 2026.
 """
 
 import math
@@ -182,7 +183,12 @@ def plan_visit_sync(weeds, visits, today):
       visit_value = visit.get(rule["visit_field"])
       weed_value = weed.get(weed_field)
       ignore = rule.get("ignore_condition")
-      if ignore and ignore(weed_value, visit_value):
+      if ignore and ignore(
+        weed_value,
+        visit_value,
+        visit.get("CreationDate_1"),
+        visit.get("EditDate_1"),
+      ):
         continue
       if not _differs(weed_value, visit_value):
         continue

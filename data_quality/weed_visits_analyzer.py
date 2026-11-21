@@ -34,7 +34,7 @@ Rule Metadata Structure (FIELD_COMPARISON_RULES):
 - visit_field: Field name in Visits_Table
 - display_name: Human-readable name for reporting
 - mismatch_column: Column name for mismatch indicator
-- ignore_condition: Optional lambda(weed_val, visit_val) for custom skip logic
+- ignore_condition: Optional callable(weed_val, visit_val, created, edited) for custom skip logic
 - description: Explanation of what the rule checks
 - category: Optional category (e.g., 'audit') for grouping/filtering
 
@@ -72,8 +72,9 @@ Ignore Conditions Apply at Field Level:
   When an ignore_condition is triggered for a field, it ONLY affects that specific field.
   Other rules continue to process the same row independently.
   
-  Example: If Status has ignore_condition for Purple values:
-  - Status field: Purple → Active (IGNORED, no mismatch flagged)
+  Example: If Status has ignore_condition for an old Purple parent:
+  - Status field: Purple parent, visit last touched before 1 Nov 2026 (IGNORED)
+  - Status field: Purple parent, visit created or edited on or after 1 Nov 2026 (corrected)
   - Urgency field: High → Medium (NOT ignored, mismatch flagged & correctable)
   - Same row, different outcomes per field
 
@@ -132,6 +133,7 @@ import os
 import json
 import argparse
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from tenacity import retry, stop_after_attempt, wait_fixed
 from arcgis.gis import GIS
 from arcgis.features import FeatureLayer, Table
@@ -156,6 +158,11 @@ REFERENCE_DATE_DESCRIPTION = (
 # "2021-10-09 21:19:26" UTC = 1633767566000 (epoch ms)
 INITIAL_BULK_LOAD_DATE_TIMESTAMP = 1633767566000
 INITIAL_BULK_LOAD_DATE_ISO = "2021-10-09 21:19:26"
+
+# Reason: visits touched before 1 Nov 2026 include the rollover crossover.
+# A purple parent stays unless the visit was created or edited on or after that date.
+NZT = ZoneInfo("Pacific/Auckland")
+PURPLE_PARENT_VISIT_CUTOFF = datetime(2026, 11, 1, tzinfo=NZT)
 
 VISIT_CORRECTION_RULES = [
   {
@@ -189,6 +196,49 @@ VISIT_FROM_WEED_RULES = [
 ]
 
 
+def _as_nzt(value):
+  """ArcGIS epoch milliseconds or a datetime, as a New Zealand time."""
+  if value is None or isinstance(value, str):
+    return None
+  try:
+    if pd.isna(value):
+      return None
+  except (TypeError, ValueError):
+    return None
+  if isinstance(value, datetime):
+    if value.tzinfo is None:
+      return value.replace(tzinfo=NZT)
+    return value.astimezone(NZT)
+  try:
+    return datetime.fromtimestamp(float(value) / 1000, tz=NZT)
+  except (TypeError, ValueError, OverflowError, OSError):
+    return None
+
+
+def _on_or_after_purple_cutoff(value):
+  moment = _as_nzt(value)
+  return moment is not None and moment >= PURPLE_PARENT_VISIT_CUTOFF
+
+
+def parent_status_ignored(weed_val, _visit_val, created=None, edited=None):
+  """Keep a purple parent when the visit was not created or edited on or after 1 Nov 2026."""
+  if pd.isna(weed_val) or not str(weed_val).startswith("Purple"):
+    return False
+  return not (_on_or_after_purple_cutoff(created) or _on_or_after_purple_cutoff(edited))
+
+
+def _status_ignored(condition, weed_val, visit_val, row):
+  """Apply a rule ignore_condition. created and edited are the visit audit dates."""
+  if not condition:
+    return False
+  return bool(condition(
+    weed_val,
+    visit_val,
+    row.get("visit_CreationDate_1"),
+    row.get("visit_EditDate_1"),
+  ))
+
+
 FIELD_COMPARISON_RULES = [
   {
     'weed_field': 'Urgency',
@@ -203,8 +253,8 @@ FIELD_COMPARISON_RULES = [
     'visit_field': 'WeedVisitStatus',
     'display_name': 'Status',
     'mismatch_column': 'Status_Mismatch',
-    'ignore_condition': lambda weed_val, visit_val: pd.notna(weed_val) and str(weed_val).startswith('Purple'),
-    'description': 'Parent status should match visit status (ignores Purple statuses)'
+    'ignore_condition': parent_status_ignored,
+    'description': 'Parent status should match visit status (a purple parent stays until the visit was created or edited on or after 1 Nov 2026)'
   },
   {
     'weed_field': 'DateVisitMadeFromLastVisit',
@@ -828,7 +878,7 @@ def check_field_mismatches(merged_df, ignore_creation_edit_dates=False):
         continue
       
       # Apply custom ignore condition if specified
-      if ignore_condition and ignore_condition(weed_val, visit_val):
+      if _status_ignored(ignore_condition, weed_val, visit_val, row):
         continue
       
       # Check for mismatch (includes cases where weed has value but visit is null)
@@ -1519,7 +1569,7 @@ def correct_mismatches(weed_layer, merged_df, ignore_creation_edit_dates=False,
       visit_val = row.get(visit_field)
       
       # Skip if ignore condition applies
-      if ignore_condition and ignore_condition(weed_val, visit_val):
+      if _status_ignored(ignore_condition, weed_val, visit_val, row):
         ignored_count += 1
         continue
       
@@ -2097,7 +2147,7 @@ def inspect_weed_instance(weed_layer, visits_table, weed_objectid, ignore_creati
       visit_str = str(visit_val) if pd.notna(visit_val) else '(null)'
       
       # Check if ignored
-      if ignore_condition and ignore_condition(weed_val, visit_val):
+      if _status_ignored(ignore_condition, weed_val, visit_val, latest_visit):
         ignored.append({
           'name': display_name,
           'weed': weed_str,

@@ -69,7 +69,7 @@ Compares WeedLocations fields to their latest visit data:
 | Field | WeedLocations | Visits_Table | Special Rules |
 |-------|---------------|--------------|---------------|
 | Urgency | Urgency | DifficultyChild | - |
-| Status | ParentStatusWithDomain | WeedVisitStatus | Ignores Purple* statuses |
+| Status | ParentStatusWithDomain | WeedVisitStatus | Purple parent stays unless the visit was created or edited on or after 1 Nov 2026* |
 | Date Visit Made | DateVisitMadeFromLastVisit | DateCheck | - |
 | Date For Next Visit | DateForNextVisitFromLastVisit | DateForReturnVisit | - |
 | Visit Stage | LatestVisitStage | VisitStage | - |
@@ -86,7 +86,7 @@ Updates latest visit fields from WeedLocations data:
 - **Status from WeedLocation**: Copies ParentStatusWithDomain → WeedVisitStatus when empty (excludes Purple statuses)
 
 **Special Values:**
-- *Purple statuses: Set by Daily/Annual Rollover, intentionally different
+- *Purple parent status: Left in place when the latest visit was last created and edited before 1 Nov 2026. A visit touched on or after that date is copied. Visits touched before 1 Nov stay purple so rollover crossover edits are excluded. Purple is still not copied from the weed onto an empty visit status.
 - †Bulk load date: `2021-10-09 21:19:26` (initial data migration timestamp)
 
 ### Output Files

@@ -1,5 +1,12 @@
 # Tasks
 
+## 2026-11-22 — Purple parent status follows a current visit
+
+Visit sync left `ParentStatusWithDomain` purple even when the latest visit was a later yellow status. Rollover no longer writes purple onto the weed instance.
+
+- [x] Copy `WeedVisitStatus` over a purple parent when the visit `CreationDate_1` or `EditDate_1` is on or after 1 Nov 2026 NZT
+- [x] Keep a purple parent when both visit audit dates are earlier, including the rollover crossover through 31 Oct, or missing
+
 ## 2026-11-03 — Weed maintenance missing six
 
 Scheduled weed maintenance dies on `FeatureLayer.fromitem` because `arcgis` 2.4.4 imports `six` and does not install it.
